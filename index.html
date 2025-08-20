@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeshCore Custom Key Generator</title>
+    <script>
+        console.log('✓ Using Web Crypto API for Ed25519 key generation');
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 1.1em;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .hex-input {
+            font-family: 'Courier New', monospace;
+            text-transform: uppercase;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #ecf0f1;
+            color: #2c3e50;
+        }
+
+        .btn-secondary:hover {
+            background: #d5dbdb;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .progress-container {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #ecf0f1;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        .progress-text {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+
+        .result-container {
+            margin-top: 30px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 5px solid #27ae60;
+            display: none;
+        }
+
+        .result-container h3 {
+            color: #27ae60;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .key-display {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .key-label {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .key-value {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            word-break: break-all;
+            color: #34495e;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .error {
+            background: #fee;
+            color: #c0392b;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #c0392b;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .info {
+            background: #e8f4fd;
+            color: #2980b9;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #2980b9;
+            margin-top: 20px;
+            margin-bottom: 30px;
+        }
+
+        .info h4 {
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .info ul {
+            margin-left: 20px;
+        }
+
+        .info li {
+            margin-bottom: 5px;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 0;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        /* Hide scrollbar for webkit browsers */
+        .modal-content::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Hide scrollbar for Firefox */
+        .modal-content {
+            scrollbar-width: none;
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 20px 25px;
+            border-radius: 15px 15px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            font-size: 1.3em;
+        }
+
+        .close {
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.3s ease;
+        }
+
+        .close:hover {
+            opacity: 0.7;
+        }
+
+        .modal-body {
+            padding: 25px;
+        }
+
+        .import-section {
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .import-section h4 {
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+            font-size: 1.1em;
+        }
+
+        .import-section ol, .import-section ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .import-section li {
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            color: #856404;
+        }
+
+        .warning-box strong {
+            color: #d63031;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>MeshCore Key Generator</h1>
+            <p>Generate custom Ed25519 keys for MeshCore</p>
+        </div>
+
+        <div class="content">
+            <div class="info">
+                <h4>About MeshCore Keys</h4>
+                <ul>
+                    <li>Meshcore uses the first two characters of your public key as a node identifier. It is helpful to be able to select your node id to avoid collisions with neighbors.</li>
+                    <li>This key generator does all processing in your browser - keys never leave your device</li>
+                </ul>
+            </div>
+
+            <!-- Import Instructions Modal -->
+            <div id="importModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>📋 How to Import Keys into MeshCore</h3>
+                        <span class="close" id="closeModal">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="import-section">
+                            <h4>🔧 For Companion Nodes</h4>
+                            <ol>
+                                <li>Connect to your node using the MeshCore app</li>
+                                <li>Tap the <strong>Settings gear</strong> icon</li>
+                                <li>Tap <strong>Manage Identity Key</strong></li>
+                                <li>Paste your <strong>Private Key</strong> into the text box</li>
+                                <li>Tap <strong>Import Private Key</strong></li>
+                                <li><strong>Important:</strong> Tap the checkmark ✓ to save changes in settings</li>
+                            </ol>
+                        </div>
+                        
+                        <div class="import-section">
+                            <h4>📡 For Repeater Nodes</h4>
+                            <div class="warning-box">
+                                <strong>⚠️ Important:</strong> You must temporarily <a href="https://flasher.meshcore.co.uk/" target="_blank">flash companion firmware</a> first.
+                            </div>
+                            <ol>
+                                <li>Flash your node with <strong>companion firmware</strong> temporarily</li>
+                                <li>Follow the companion instructions above</li>
+                                <li>After importing, you can safely re-flash to repeater firmware</li>
+                            </ol>
+                        </div>
+                        
+                        <div class="import-section">
+                            <h4>📄 Alternative: JSON Import</h4>
+                            <p>If you downloaded the JSON file from this keygen:</p>
+                            <ol>
+                                <li>In the MeshCore app settings, tap <strong>Import Config</strong></li>
+                                <li>Select your downloaded JSON file</li>
+                                <li>The public and private keys will be automatically imported</li>
+                            </ol>
+                        </div>
+                        
+                        <div class="import-section">
+                            <h4>💡 Tips</h4>
+                            <ul>
+                                <li>Make sure to copy the <strong>entire</strong> private key (128 characters)</li>
+                                <li>The new public key won't appear until you save the settings</li>
+                                <li>Keep your private key secure and never share it</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <form id="keygenForm">
+                <div class="form-group">
+                    <label for="targetPrefix">Target Prefix (Hex):</label>
+                    <input type="text" id="targetPrefix" class="hex-input" 
+                           placeholder="Enter hex prefix (e.g., F8, F8A1, FFF, etc.)" 
+                           maxlength="8" pattern="[0-9A-Fa-f]+">
+                    <small style="color: #7f8c8d; margin-top: 5px; display: block;">
+                        Enter any hex prefix (1-8 characters). Longer prefixes take longer to find.
+                    </small>
+                    <div id="prefixInfo" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea; display: none;">
+                        <div style="font-weight: 600; color: #2c3e50; margin-bottom: 5px;">📊 Difficulty Estimate</div>
+                        <div id="prefixDifficulty" style="font-size: 14px; color: #34495e;"></div>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button type="submit" class="btn btn-primary" id="generateBtn">
+                        Generate Key
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="stopBtn" disabled>
+                        Stop
+                    </button>
+                </div>
+            </form>
+
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">
+                    Initializing...
+                </div>
+            </div>
+
+            <div class="error" id="errorContainer"></div>
+
+            <div class="result-container" id="resultContainer">
+                <h3>✓ Key Generated Successfully!</h3>
+                
+                <div class="key-display">
+                    <div class="key-label">Public Key:</div>
+                    <div class="key-value" id="publicKey"></div>
+                </div>
+
+                <div class="key-display">
+                    <div class="key-label">Private Key:</div>
+                    <div class="key-value" id="privateKey"></div>
+                </div>
+
+                <div class="stats">
+                    <div class="stat-item">
+                        <div class="stat-value" id="attemptsCount">0</div>
+                        <div class="stat-label">Attempts</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="timeElapsed">0s</div>
+                        <div class="stat-label">Time</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="keysPerSecond">0</div>
+                        <div class="stat-label">Keys/sec</div>
+                    </div>
+                </div>
+
+                <div class="button-group" style="margin-top: 20px;">
+                    <button type="button" class="btn btn-primary" id="downloadBtn">
+                        Download JSON
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="importInfoBtn">
+                        📋 How to Import Keys
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Web Crypto API Ed25519 implementation
+        console.log('✓ Web Crypto API available:', typeof crypto !== 'undefined');
+        console.log('✓ Subtle crypto available:', typeof crypto.subtle !== 'undefined');
+
+        // Import noble-ed25519 for proper Ed25519 operations
+        // This library provides the crypto_scalarmult_ed25519_base_noclamp equivalent
+        let nobleEd25519 = null;
+
+        class MeshCoreKeyGenerator {
+            constructor() {
+                this.isRunning = false;
+                this.attempts = 0;
+                this.startTime = null;
+                this.lastUpdateTime = null;
+                this.updateInterval = null;
+                this.initialized = false;
+            }
+
+            async initialize() {
+                if (!this.initialized) {
+                    try {
+                        // Use unpkg.com for the latest version (recommended) - ES module format
+                        nobleEd25519 = await import('https://unpkg.com/noble-ed25519@latest/esm/index.js');
+                        this.initialized = true;
+                        console.log('✓ noble-ed25519 library loaded successfully from unpkg.com');
+                        console.log('Available functions:', Object.keys(nobleEd25519));
+                    } catch (error) {
+                        console.error('Failed to load from unpkg.com, trying jsDelivr:', error);
+                        try {
+                            // Fallback to jsDelivr - ES module format
+                            nobleEd25519 = await import('https://cdn.jsdelivr.net/npm/noble-ed25519@latest/esm/index.js');
+                            this.initialized = true;
+                            console.log('✓ noble-ed25519 library loaded successfully from jsDelivr');
+                            console.log('Available functions:', Object.keys(nobleEd25519));
+                        } catch (fallbackError) {
+                            console.error('Failed to load from jsDelivr, trying Skypack:', fallbackError);
+                            try {
+                                // Fallback to Skypack
+                                nobleEd25519 = await import('https://cdn.skypack.dev/noble-ed25519');
+                                this.initialized = true;
+                                console.log('✓ noble-ed25519 library loaded successfully from Skypack');
+                                console.log('Available functions:', Object.keys(nobleEd25519));
+                            } catch (skypackError) {
+                                console.error('Failed to load from Skypack, trying offline fallback:', skypackError);
+                                try {
+                                    // Final fallback: offline version
+                                    nobleEd25519 = await import('./noble-ed25519-offline-simple.js');
+                                    this.initialized = true;
+                                    console.log('✓ noble-ed25519 library loaded successfully (offline fallback)');
+                                    console.log('Available functions:', Object.keys(nobleEd25519));
+                                } catch (offlineError) {
+                                    console.error('Failed to load noble-ed25519 library from all sources:', offlineError);
+                                    throw new Error('Failed to load Ed25519 library. Please check your internet connection and ensure noble-ed25519-offline.js is available.');
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Generate a MeshCore-compatible Ed25519 keypair using the CORRECT algorithm
+            // This matches the Python implementation exactly:
+            // 1. Generate 32-byte random seed
+            // 2. SHA512 hash the seed
+            // 3. Manually clamp the first 32 bytes (scalar clamping)
+            // 4. Use crypto_scalarmult_ed25519_base_noclamp to get public key
+            // 5. Private key = [clamped_scalar][random_filler]
+            async generateMeshCoreKeypair() {
+                // Ensure library is loaded
+                await this.initialize();
+                
+                // Step 1: Generate 32-byte random seed
+                const seed = crypto.getRandomValues(new Uint8Array(32));
+                
+                // Step 2: Hash the seed with SHA-512
+                const digest = await crypto.subtle.digest('SHA-512', seed);
+                const digestArray = new Uint8Array(digest);
+                
+                // Step 3: Clamp the first 32 bytes according to Ed25519 rules
+                const clamped = new Uint8Array(digestArray.slice(0, 32));
+                clamped[0] &= 248;  // Clear bottom 3 bits (make it divisible by 8)
+                clamped[31] &= 63;  // Clear top 2 bits
+                clamped[31] |= 64;  // Set bit 6 (ensure it's in the right range)
+                
+                // Step 4: Use the clamped scalar to generate the public key
+                // This is equivalent to crypto_scalarmult_ed25519_base_noclamp
+                // Use Point.BASE.multiply which accepts pre-clamped scalars (no double clamping)
+                let publicKey;
+                try {
+                    // Convert scalar to BigInt for Point.BASE.multiply
+                    let scalarBigInt = 0n;
+                    for (let i = 0; i < 32; i++) {
+                        scalarBigInt += BigInt(clamped[i]) << BigInt(8 * i);
+                    }
+                    publicKey = nobleEd25519.Point.BASE.multiply(scalarBigInt);
+                } catch (error) {
+                    // Fallback to getPublicKey if Point.BASE.multiply fails
+                    try {
+                        publicKey = await nobleEd25519.getPublicKey(clamped);
+                    } catch (fallbackError) {
+                        publicKey = nobleEd25519.getPublicKey(clamped);
+                    }
+                }
+                
+                // Convert public key to Uint8Array if it's not already
+                let publicKeyBytes;
+                if (publicKey instanceof Uint8Array) {
+                    publicKeyBytes = publicKey;
+                } else if (publicKey.toRawBytes) {
+                    // Point object with toRawBytes method
+                    publicKeyBytes = publicKey.toRawBytes();
+                } else if (publicKey.toBytes) {
+                    // Point object with toBytes method
+                    publicKeyBytes = publicKey.toBytes();
+                } else if (publicKey.x !== undefined && publicKey.y !== undefined) {
+                    // Point object with x, y coordinates
+                    // Convert to compressed format (32 bytes)
+                    publicKeyBytes = new Uint8Array(32);
+                    const y = publicKey.y;
+                    const x = publicKey.x;
+                    
+                    // Copy y-coordinate (little-endian)
+                    for (let i = 0; i < 31; i++) {
+                        publicKeyBytes[i] = Number((y >> BigInt(8 * i)) & 255n);
+                    }
+                    // Set the sign bit based on x-coordinate
+                    publicKeyBytes[31] = Number((x & 1n) << 7);
+                } else {
+                    console.error('Unsupported public key format:', publicKey);
+                    throw new Error(`Unsupported public key format from noble-ed25519: ${publicKey.constructor.name}`);
+                }
+                
+                // Debug: Check public key format
+                if (this.attempts <= 5) {
+                    console.log(`Public key type: ${typeof publicKey}, constructor: ${publicKey.constructor.name}`);
+                    console.log(`Public key bytes type: ${typeof publicKeyBytes}, length: ${publicKeyBytes?.length}`);
+                    console.log(`Public key bytes is Uint8Array: ${publicKeyBytes instanceof Uint8Array}`);
+                    if (publicKeyBytes instanceof Uint8Array) {
+                        console.log(`Public key bytes: ${Array.from(publicKeyBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+                    }
+                }
+                
+                // Step 5: Create 64-byte private key: [clamped_scalar][random_filler]
+                // This matches the Python implementation exactly
+                const filler = crypto.getRandomValues(new Uint8Array(32));
+                const meshcorePrivateKey = new Uint8Array(64);
+                meshcorePrivateKey.set(clamped, 0);  // First 32 bytes: clamped scalar
+                meshcorePrivateKey.set(filler, 32);  // Second 32 bytes: random filler
+                
+                return { 
+                    publicKey: publicKeyBytes, 
+                    privateKey: meshcorePrivateKey 
+                };
+            }
+
+            // Convert Uint8Array to hex string
+            toHex(bytes) {
+                if (!(bytes instanceof Uint8Array)) {
+                    console.error('toHex: bytes is not Uint8Array:', typeof bytes, bytes);
+                    return '';
+                }
+                const hex = Array.from(bytes)
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('')
+                    .toUpperCase();
+                return hex;
+            }
+
+            // Check if public key matches the target prefix
+            checkPrefix(publicKeyHex, targetPrefix) {
+                return publicKeyHex.startsWith(targetPrefix.toUpperCase());
+            }
+
+            // Validate that a generated keypair is correct (matches Python implementation)
+            async validateKeypair(privateKeyHex, publicKeyHex) {
+                try {
+                    // Ensure library is loaded
+                    await this.initialize();
+                    
+                    // Convert hex strings back to Uint8Array
+                    const privateKeyBytes = new Uint8Array(
+                        privateKeyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+                    );
+                    
+                    if (privateKeyBytes.length !== 64) {
+                        return { valid: false, error: 'Private key must be 64 bytes' };
+                    }
+                    
+                    // Extract the clamped scalar (first 32 bytes) - this is what MeshCore actually uses
+                    const clampedScalar = privateKeyBytes.slice(0, 32);
+                    
+                    // 1. Check that the private key is not all zeros
+                    if (clampedScalar.every(byte => byte === 0)) {
+                        return { valid: false, error: 'Private key cannot be all zeros' };
+                    }
+                    
+                    // 2. Validate Ed25519 scalar clamping rules (matches Python implementation)
+                    if ((clampedScalar[0] & 7) !== 0) {
+                        return { valid: false, error: 'Private key scalar not properly clamped (bits 0-2 should be 0)' };
+                    }
+                    
+                    if ((clampedScalar[31] & 192) !== 64) {
+                        return { valid: false, error: 'Private key scalar not properly clamped (bits 6 should be 1, bits 7 should be 0)' };
+                    }
+                    
+                    // 3. Check public key format
+                    const publicKeyBytes = new Uint8Array(
+                        publicKeyHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+                    );
+                    
+                    if (publicKeyBytes.length !== 32) {
+                        return { valid: false, error: 'Public key must be 32 bytes' };
+                    }
+                    
+                    if (publicKeyBytes.every(byte => byte === 0)) {
+                        return { valid: false, error: 'Public key cannot be all zeros' };
+                    }
+                    
+                    // 4. CRITICAL: Verify that the private key actually generates the claimed public key
+                    // This matches the Python implementation's verify_key_compatibility function
+                    try {
+                        // Use Point.BASE.multiply which accepts pre-clamped scalars (no double clamping)
+                        let derivedPublicKey;
+                        try {
+                            // Convert scalar to BigInt for Point.BASE.multiply
+                            let scalarBigInt = 0n;
+                            for (let i = 0; i < 32; i++) {
+                                scalarBigInt += BigInt(clampedScalar[i]) << BigInt(8 * i);
+                            }
+                            derivedPublicKey = nobleEd25519.Point.BASE.multiply(scalarBigInt);
+                        } catch (error) {
+                            // Fallback to getPublicKey if Point.BASE.multiply fails
+                            try {
+                                derivedPublicKey = await nobleEd25519.getPublicKey(clampedScalar);
+                            } catch (fallbackError) {
+                                derivedPublicKey = nobleEd25519.getPublicKey(clampedScalar);
+                            }
+                        }
+                        
+                        // Convert to Uint8Array if needed
+                        let derivedPublicKeyBytes;
+                        if (derivedPublicKey instanceof Uint8Array) {
+                            derivedPublicKeyBytes = derivedPublicKey;
+                        } else if (derivedPublicKey.toRawBytes) {
+                            derivedPublicKeyBytes = derivedPublicKey.toRawBytes();
+                        } else if (derivedPublicKey.toBytes) {
+                            derivedPublicKeyBytes = derivedPublicKey.toBytes();
+                        } else if (derivedPublicKey.x !== undefined && derivedPublicKey.y !== undefined) {
+                            // Point object with x, y coordinates
+                            // Convert to compressed format (32 bytes)
+                            derivedPublicKeyBytes = new Uint8Array(32);
+                            const y = derivedPublicKey.y;
+                            const x = derivedPublicKey.x;
+                            
+                            // Copy y-coordinate (little-endian)
+                            for (let i = 0; i < 31; i++) {
+                                derivedPublicKeyBytes[i] = Number((y >> BigInt(8 * i)) & 255n);
+                            }
+                            // Set the sign bit based on x-coordinate
+                            derivedPublicKeyBytes[31] = Number((x & 1n) << 7);
+                        } else {
+                            console.error('Unsupported derived public key format:', derivedPublicKey);
+                            throw new Error(`Unsupported public key format from noble-ed25519: ${derivedPublicKey.constructor.name}`);
+                        }
+                        
+                        const derivedPublicHex = this.toHex(derivedPublicKeyBytes);
+                        
+                        if (derivedPublicHex !== publicKeyHex) {
+                            return { 
+                                valid: false, 
+                                error: `Key verification failed: private key does not generate the claimed public key` 
+                            };
+                        }
+                    } catch (error) {
+                        return { 
+                            valid: false, 
+                            error: `Key verification failed: ${error.message}` 
+                        };
+                    }
+                    
+                    return { valid: true };
+                } catch (error) {
+                    return { valid: false, error: `Validation error: ${error.message}` };
+                }
+            }
+            
+
+
+            // Generate keys until we find a match
+            async generateVanityKey(targetPrefix, prefixLength) {
+                this.isRunning = true;
+                this.attempts = 0;
+                this.startTime = Date.now();
+                this.lastUpdateTime = this.startTime;
+
+                const updateProgress = () => {
+                    if (!this.isRunning) return;
+
+                    const now = Date.now();
+                    const elapsed = (now - this.startTime) / 1000;
+                    const rate = this.attempts / elapsed;
+
+                    document.getElementById('attemptsCount').textContent = this.attempts.toLocaleString();
+                    document.getElementById('timeElapsed').textContent = `${elapsed.toFixed(1)}s`;
+                    document.getElementById('keysPerSecond').textContent = Math.round(rate).toLocaleString();
+
+                    // Update progress text
+                    const progressText = document.getElementById('progressText');
+                    progressText.textContent = `${this.attempts.toLocaleString()} attempts | ${Math.round(rate).toLocaleString()} keys/sec | ${elapsed.toFixed(1)}s elapsed`;
+
+                    // Estimate progress based on probability
+                    const probability = 1 / Math.pow(16, prefixLength);
+                    const expectedAttempts = 1 / probability;
+                    const progress = Math.min((this.attempts / expectedAttempts) * 100, 99);
+                    
+                    document.getElementById('progressFill').style.width = `${progress}%`;
+                };
+
+                // Update progress every 100ms
+                this.updateInterval = setInterval(updateProgress, 100);
+
+                try {
+                    while (this.isRunning) {
+                        this.attempts++;
+
+                        // Generate a keypair
+                        const { publicKey, privateKey } = await this.generateMeshCoreKeypair();
+                        const publicKeyHex = this.toHex(publicKey);
+                        
+                        // Debug: Log first few keys to verify generation
+                        if (this.attempts <= 5) {
+                            console.log(`Key ${this.attempts}: ${publicKeyHex}`);
+                            console.log(`Target prefix: ${targetPrefix}`);
+                            console.log(`First ${targetPrefix.length} chars: ${publicKeyHex.substring(0, targetPrefix.length)}`);
+                            console.log(`Match: ${this.checkPrefix(publicKeyHex, targetPrefix)}`);
+                        }
+
+                        // Check if it matches our target prefix
+                        if (this.checkPrefix(publicKeyHex, targetPrefix)) {
+                            console.log(`Found matching key: ${publicKeyHex} matches ${targetPrefix}`);
+                            // Validate the generated keypair
+                            const privateKeyHex = this.toHex(privateKey);
+                            const validation = await this.validateKeypair(privateKeyHex, publicKeyHex);
+                            
+                            if (validation.valid) {
+                                this.isRunning = false;
+                                clearInterval(this.updateInterval);
+
+                                // Final progress update
+                                updateProgress();
+
+                                return {
+                                    publicKey: publicKeyHex,
+                                    privateKey: privateKeyHex,
+                                    attempts: this.attempts,
+                                    timeElapsed: (Date.now() - this.startTime) / 1000,
+                                    validation: validation
+                                };
+                            } else {
+                                // If validation fails, continue searching
+                                console.warn(`Key validation failed: ${validation.error}, continuing search...`);
+                                continue;
+                            }
+                        }
+
+                        // Yield control to prevent blocking the UI
+                        if (this.attempts % 1000 === 0) {
+                            await new Promise(resolve => setTimeout(resolve, 0));
+                        }
+                    }
+                } catch (error) {
+                    this.isRunning = false;
+                    clearInterval(this.updateInterval);
+                    throw error;
+                }
+
+                return null;
+            }
+
+            stop() {
+                this.isRunning = false;
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                }
+            }
+        }
+
+        // Global key generator instance
+        const keyGenerator = new MeshCoreKeyGenerator();
+
+        // DOM elements
+        const form = document.getElementById('keygenForm');
+        const targetPrefixInput = document.getElementById('targetPrefix');
+        const generateBtn = document.getElementById('generateBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const resultContainer = document.getElementById('resultContainer');
+        const errorContainer = document.getElementById('errorContainer');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const importInfoBtn = document.getElementById('importInfoBtn');
+        const importModal = document.getElementById('importModal');
+        const closeModal = document.getElementById('closeModal');
+
+        // Calculate and display difficulty estimate
+        function updateDifficultyEstimate(prefix) {
+            const prefixInfo = document.getElementById('prefixInfo');
+            const prefixDifficulty = document.getElementById('prefixDifficulty');
+            
+            if (!prefix || prefix.length === 0) {
+                prefixInfo.style.display = 'none';
+                return;
+            }
+            
+            // Calculate probability and expected attempts
+            const probability = 1 / Math.pow(16, prefix.length);
+            const expectedAttempts = 1 / probability;
+            
+            // Format the expected attempts in a human-readable way
+            let attemptsText;
+            if (expectedAttempts >= 1e12) {
+                attemptsText = `${(expectedAttempts / 1e12).toFixed(1)} trillion`;
+            } else if (expectedAttempts >= 1e9) {
+                attemptsText = `${(expectedAttempts / 1e9).toFixed(1)} billion`;
+            } else if (expectedAttempts >= 1e6) {
+                attemptsText = `${(expectedAttempts / 1e6).toFixed(1)} million`;
+            } else if (expectedAttempts >= 1e3) {
+                attemptsText = `${(expectedAttempts / 1e3).toFixed(1)} thousand`;
+            } else {
+                attemptsText = Math.round(expectedAttempts).toLocaleString();
+            }
+            
+            // Calculate estimated time (assuming 10,000 keys/sec as a realistic estimate for modern hardware)
+            const estimatedKeysPerSecond = 10000;
+            const estimatedSeconds = expectedAttempts / estimatedKeysPerSecond;
+            
+            let timeText;
+            if (estimatedSeconds >= 31536000) { // 1 year
+                timeText = `${(estimatedSeconds / 31536000).toFixed(1)} years`;
+            } else if (estimatedSeconds >= 2592000) { // 1 month
+                timeText = `${(estimatedSeconds / 2592000).toFixed(1)} months`;
+            } else if (estimatedSeconds >= 86400) { // 1 day
+                timeText = `${(estimatedSeconds / 86400).toFixed(1)} days`;
+            } else if (estimatedSeconds >= 3600) { // 1 hour
+                timeText = `${(estimatedSeconds / 3600).toFixed(1)} hours`;
+            } else if (estimatedSeconds >= 60) { // 1 minute
+                timeText = `${(estimatedSeconds / 60).toFixed(1)} minutes`;
+            } else {
+                timeText = `${Math.round(estimatedSeconds)} seconds`;
+            }
+            
+            // Determine difficulty level
+            let difficultyLevel, difficultyColor;
+            if (expectedAttempts <= 1000) {
+                difficultyLevel = "Very Easy";
+                difficultyColor = "#27ae60";
+            } else if (expectedAttempts <= 100000) {
+                difficultyLevel = "Easy";
+                difficultyColor = "#2ecc71";
+            } else if (expectedAttempts <= 10000000) {
+                difficultyLevel = "Moderate";
+                difficultyColor = "#f39c12";
+            } else if (expectedAttempts <= 1000000000) {
+                difficultyLevel = "Hard";
+                difficultyColor = "#e67e22";
+            } else if (expectedAttempts <= 100000000000) {
+                difficultyLevel = "Very Hard";
+                difficultyColor = "#e74c3c";
+            } else {
+                difficultyLevel = "Extreme";
+                difficultyColor = "#8e44ad";
+            }
+            
+            prefixDifficulty.innerHTML = `
+                <div style="margin-bottom: 8px;">
+                    <span style="font-weight: 600; color: ${difficultyColor};">${difficultyLevel}</span> - 
+                    Expected to find in ~${attemptsText} attempts
+                </div>
+                <div style="font-size: 13px; color: #7f8c8d;">
+                    Estimated time: ~${timeText} (at 10k keys/sec)
+                </div>
+                <div style="font-size: 13px; color: #7f8c8d;">
+                    Probability: 1 in ${expectedAttempts.toLocaleString()} (${(probability * 100).toFixed(6)}%)
+                </div>
+            `;
+            
+            prefixInfo.style.display = 'block';
+        }
+
+        // Update difficulty estimate when user types
+        targetPrefixInput.addEventListener('input', (e) => {
+            const prefix = e.target.value.trim().toUpperCase();
+            if (/^[0-9A-F]*$/.test(prefix)) {
+                updateDifficultyEstimate(prefix);
+            }
+        });
+
+        // Form submission
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Check if Web Crypto API is available
+            if (typeof crypto === 'undefined' || typeof crypto.subtle === 'undefined') {
+                showError('Error: Web Crypto API is not available in this browser.');
+                return;
+            }
+
+            const targetPrefix = targetPrefixInput.value.trim().toUpperCase();
+
+            // Validation
+            if (!targetPrefix) {
+                showError('Please enter a target prefix.');
+                return;
+            }
+
+            if (targetPrefix.length === 0 || targetPrefix.length > 8) {
+                showError('Prefix must be between 1 and 8 characters long.');
+                return;
+            }
+
+            if (!/^[0-9A-F]+$/.test(targetPrefix)) {
+                showError('Prefix must contain only hexadecimal characters (0-9, A-F).');
+                return;
+            }
+
+            // Hide previous results and errors
+            hideError();
+            resultContainer.style.display = 'none';
+
+            // Show progress
+            progressContainer.style.display = 'block';
+            generateBtn.disabled = true;
+            stopBtn.disabled = false;
+            stopBtn.textContent = 'Stop';
+            stopBtn.className = 'btn btn-secondary';
+
+            try {
+                // Initialize the key generator (loads the Ed25519 library)
+                document.getElementById('progressText').textContent = 'Loading Ed25519 library...';
+                await keyGenerator.initialize();
+                
+                const result = await keyGenerator.generateVanityKey(targetPrefix, targetPrefix.length);
+                
+                if (result) {
+                    displayResult(result, targetPrefix);
+                } else {
+                    showError('Key generation was stopped.');
+                }
+            } catch (error) {
+                showError(`Error generating key: ${error.message}`);
+            } finally {
+                progressContainer.style.display = 'none';
+                generateBtn.disabled = false;
+                stopBtn.disabled = false;  // Enable the button for "Generate Another"
+                stopBtn.textContent = 'Generate Another';
+                stopBtn.className = 'btn btn-secondary';
+            }
+        });
+
+        // Stop/Generate Another button
+        stopBtn.addEventListener('click', () => {
+            if (stopBtn.textContent === 'Stop') {
+                // Currently generating - stop the process
+                keyGenerator.stop();
+                stopBtn.disabled = true;
+            } else {
+                // Currently idle - generate another key
+                resultContainer.style.display = 'none';
+                form.dispatchEvent(new Event('submit'));
+            }
+        });
+
+        // Download button
+        downloadBtn.addEventListener('click', () => {
+            const publicKey = document.getElementById('publicKey').textContent;
+            const privateKey = document.getElementById('privateKey').textContent;
+            const targetPrefix = targetPrefixInput.value.trim().toUpperCase();
+            
+            const meshcoreData = {
+                public_key: publicKey,
+                private_key: privateKey
+            };
+
+            const blob = new Blob([JSON.stringify(meshcoreData, null, 2)], {
+                type: 'application/json'
+            });
+
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `meshcore_${targetPrefix}_${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+
+
+        function displayResult(result, targetPrefix) {
+            document.getElementById('publicKey').textContent = result.publicKey;
+            document.getElementById('privateKey').textContent = result.privateKey;
+            document.getElementById('attemptsCount').textContent = result.attempts.toLocaleString();
+            document.getElementById('timeElapsed').textContent = `${result.timeElapsed.toFixed(1)}s`;
+            document.getElementById('keysPerSecond').textContent = Math.round(result.attempts / result.timeElapsed).toLocaleString();
+            
+            // Remove any existing validation status elements
+            const existingValidationStatuses = resultContainer.querySelectorAll('.key-display');
+            existingValidationStatuses.forEach(element => {
+                const label = element.querySelector('.key-label');
+                if (label && label.textContent === 'Validation Status:') {
+                    element.remove();
+                }
+            });
+            
+            // Add validation status to the result
+            const validationStatus = document.createElement('div');
+            validationStatus.className = 'key-display';
+            validationStatus.innerHTML = `
+                <div class="key-label">Validation Status:</div>
+                <div class="key-value" style="color: #27ae60; font-weight: bold;">
+                    ✓ Full Ed25519 validation passed - Scalar clamping, key consistency, and cryptographic verification confirmed
+                </div>
+            `;
+            
+            // Insert validation status after the private key display
+            const privateKeyDisplay = document.querySelector('.key-display:nth-child(3)');
+            privateKeyDisplay.parentNode.insertBefore(validationStatus, privateKeyDisplay.nextSibling);
+            
+            resultContainer.style.display = 'block';
+            resultContainer.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showError(message) {
+            errorContainer.textContent = message;
+            errorContainer.style.display = 'block';
+        }
+
+        function hideError() {
+            errorContainer.style.display = 'none';
+        }
+
+        // Modal functionality
+        importInfoBtn.addEventListener('click', () => {
+            importModal.style.display = 'block';
+        });
+
+        closeModal.addEventListener('click', () => {
+            importModal.style.display = 'none';
+        });
+
+        // Close modal when clicking outside of it
+        window.addEventListener('click', (event) => {
+            if (event.target === importModal) {
+                importModal.style.display = 'none';
+            }
+        });
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && importModal.style.display === 'block') {
+                importModal.style.display = 'none';
+            }
+        });
+
+        // Initialize the form
+        targetPrefixInput.focus();
+    </script>
+</body>
+</html>
