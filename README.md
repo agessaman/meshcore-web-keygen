@@ -1,12 +1,12 @@
 # MeshCore Web Key Generator
 
-A client-side web application for generating MeshCore-compatible Ed25519 vanity keys. The application runs entirely in your browser and generates keys that match the exact format expected by MeshCore.
+A client-side web application for generating MeshCore-compatible Ed25519 keys. The application runs entirely in your browser and generates keys that match the exact format expected by MeshCore.
 
 ## Features
 
 - **Client-side processing**: All key generation happens locally in your browser
 - **MeshCore compatibility**: Generates keys in the format MeshCore expects
-- **Vanity prefixes**: Search for keys starting with specific hex prefixes (1-8 characters)
+- **Custom prefixes**: Search for keys starting with specific hex prefixes (1-8 characters)
 - **Real-time progress**: Shows attempts, generation speed, and elapsed time
 - **JSON export**: Download generated keys in a structured format
 - **Import instructions**: Built-in guidance for importing keys into MeshCore
