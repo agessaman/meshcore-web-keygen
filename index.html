@@ -1209,6 +1209,22 @@
             }
         });
 
+        // Function to get URL parameters
+        function getUrlParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        // Pre-populate prefix from URL parameter
+        const urlPrefix = getUrlParameter('prefix');
+        if (urlPrefix) {
+            const cleanPrefix = urlPrefix.trim().toUpperCase();
+            if (/^[0-9A-F]+$/.test(cleanPrefix) && cleanPrefix.length <= 8) {
+                targetPrefixInput.value = cleanPrefix;
+                updateDifficultyEstimate(cleanPrefix);
+            }
+        }
+
         // Initialize the form
         targetPrefixInput.focus();
     </script>

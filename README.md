@@ -1,71 +1,58 @@
 # MeshCore Web Key Generator
 
-A client-side web application for generating MeshCore-compatible Ed25519 keys. The application runs entirely in your browser and generates keys that match the exact format expected by MeshCore.
+A web application that generates Ed25519 keys compatible with MeshCore. Runs entirely in your browser.
+
+## What it does
+
+Generates Ed25519 key pairs where the public key starts with a specific hex prefix. MeshCore uses the first two characters of the public key as a node identifier, so this helps avoid collisions with neighboring nodes.
 
 ## Features
 
-- **Client-side processing**: All key generation happens locally in your browser
-- **MeshCore compatibility**: Generates keys in the format MeshCore expects
-- **Custom prefixes**: Search for keys starting with specific hex prefixes (1-8 characters)
-- **Real-time progress**: Shows attempts, generation speed, and elapsed time
-- **JSON export**: Download generated keys in a structured format
-- **Import instructions**: Built-in guidance for importing keys into MeshCore
-
-## How It Works
-
-MeshCore uses the first two characters of your public key as a node identifier. This tool helps you generate keys with specific prefixes to avoid collisions with neighboring nodes.
-
-The key generation process:
-1. Generates a 32-byte random seed
-2. Applies SHA-512 hashing
-3. Performs Ed25519 scalar clamping
-4. Derives the public key using the clamped scalar
-5. Creates a 64-byte private key with the clamped scalar and random filler
+- Generate Ed25519 keys with custom hex prefixes (1-8 characters)
+- Real-time progress display (attempts, speed, time)
+- JSON export of generated keys
+- Import instructions for MeshCore nodes
+- URL parameter support for pre-filling prefixes
 
 ## Usage
 
-1. Open `index.html` in a modern web browser
-2. Enter your desired hex prefix (e.g., "F8", "F8A1", "FFF")
-3. Click "Generate Key" to start the search
-4. Wait for a matching key to be found
-5. Download the JSON file or copy the keys manually
+1. Open `index.html` in a web browser
+2. Enter a hex prefix (e.g., "F8", "F8A1")
+3. Click "Generate Key"
+4. Download the JSON file when complete
+
+### URL Parameters
+
+Pre-fill the prefix input:
+- `index.html?prefix=FA` - Sets prefix to "FA"
+- `index.html?prefix=f8a1` - Sets prefix to "F8A1"
 
 ## Key Format
 
-Generated keys follow MeshCore's Ed25519 specification:
-
 - **Private Key**: 64 bytes (128 hex characters)
-  - First 32 bytes: Clamped scalar for Ed25519
-  - Last 32 bytes: Random filler
 - **Public Key**: 32 bytes (64 hex characters)
-  - Derived from the clamped scalar
 
 ## Performance
 
-Generation speed depends on your device:
-- Modern desktop: ~10,000-50,000 keys/second
-- Mobile devices: ~1,000-10,000 keys/second
+Typical speeds:
+- Desktop: 10,000-50,000 keys/second
+- Mobile: 1,000-10,000 keys/second
 
-Expected time to find a key:
-- 1-character prefix: ~0.1 seconds
-- 2-character prefix: ~1-10 seconds
-- 3-character prefix: ~1-10 minutes
-- 4-character prefix: ~1-10 hours
-- Longer prefixes: May take days or longer
+Expected time to find a key at 10k keys/second:
+- 1-character prefix: ~0.01 seconds
+- 2-character prefix: ~0.3 seconds
+- 3-character prefix: ~4 seconds
+- 4-character prefix: ~1 minute
+- 5-character prefix: ~17 minutes
+- 6-character prefix: ~4.5 hours
+- 7-character prefix: ~3 days
+- 8-character prefix: ~47 days
 
-## Browser Requirements
+## Browser Support
 
-- Chrome/Chromium 60+
-- Firefox 55+
-- Safari 11+
-- Edge 79+
+Chrome 60+, Firefox 55+, Safari 11+, Edge 79+
 
-Requires support for:
-- Web Crypto API
-- ES6 modules
-- Modern JavaScript features
-
-## Importing Keys
+## Importing to MeshCore
 
 ### Companion Nodes
 1. Connect to your node using the MeshCore app
@@ -76,18 +63,15 @@ Requires support for:
 6. Tap the checkmark ✓ to save changes
 
 ### Repeater Nodes
-1. Temporarily flash companion firmware first
-2. Follow the companion instructions above
-3. Re-flash to repeater firmware after importing
+1. Flash companion firmware temporarily
+2. Follow companion instructions above
+3. Re-flash to repeater firmware
 
 ### JSON Import
-1. In MeshCore app settings, tap "Import Config"
-2. Select your downloaded JSON file
-3. Keys will be automatically imported
+1. MeshCore app → Import Config
+2. Select downloaded JSON file
 
 ## Example Output
-
-The downloaded JSON contains:
 
 ```json
 {
@@ -96,40 +80,18 @@ The downloaded JSON contains:
 }
 ```
 
-The filename follows the pattern: `meshcore_[PREFIX]_[TIMESTAMP].json`
+Filename: `meshcore_[PREFIX]_[TIMESTAMP].json`
 
-## Security Notes
+## Security
 
-- All processing happens locally in your browser
-- No network requests are made during key generation
-- Keys are never transmitted to any server
-- Uses cryptographically secure random number generation
-- Implements proper Ed25519 scalar clamping
+- All processing happens in your browser
+- No network requests during generation
+- Keys never leave your device
 
 ## Troubleshooting
 
-**Slow performance**: 
-- Close other browser tabs
-- Use a desktop computer instead of mobile
-- Try shorter prefixes
+**Slow performance**: Close other tabs, use desktop, try shorter prefixes
 
-**Browser becomes unresponsive**:
-- The app yields control every 1000 attempts
-- If it still freezes, refresh the page
+**Browser freezes**: Refresh the page
 
-**No match found**:
-- This is normal for difficult patterns
-- Try a shorter prefix
-- Be patient - some patterns take significant time
-
-## Technical Implementation
-
-The web version implements the same MeshCore key generation algorithm as the Python reference implementation:
-
-1. Generate 32-byte random seed
-2. SHA-512 hash the seed
-3. Apply Ed25519 scalar clamping to first 32 bytes
-4. Generate public key using the clamped scalar
-5. Create 64-byte private key: `[clamped_scalar][random_filler]`
-
-The application uses the noble-ed25519 library for cryptographic operations and includes fallback mechanisms for offline use.
+**No match found**: Normal for difficult patterns, try shorter prefix
