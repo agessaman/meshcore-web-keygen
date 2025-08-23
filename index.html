@@ -376,6 +376,37 @@
             color: #d63031;
         }
 
+        /* Floating Info Button */
+        .floating-info {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+            transition: all 0.3s ease;
+            z-index: 1000;
+            border: none;
+            color: white;
+            font-size: 24px;
+            text-decoration: none;
+        }
+
+        .floating-info:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 35px rgba(102, 126, 234, 0.4);
+        }
+
+        .floating-info:active {
+            transform: translateY(-1px);
+        }
+
         @media (max-width: 600px) {
             .container {
                 margin: 10px;
@@ -392,6 +423,14 @@
 
             .header h1 {
                 font-size: 2em;
+            }
+
+            .floating-info {
+                bottom: 20px;
+                right: 20px;
+                width: 50px;
+                height: 50px;
+                font-size: 20px;
             }
         }
     </style>
@@ -543,6 +582,11 @@
             </div>
         </div>
     </div>
+
+    <!-- Floating Info Button -->
+    <a href="./instructions" class="floating-info" title="View detailed instructions">
+        📋
+    </a>
 
     <script>
         // Web Crypto API Ed25519 implementation

@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeshCore Key Application Instructions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .back-button {
+            position: fixed;
+            top: 30px;
+            left: 30px;
+            background: rgba(255,255,255,0.8);
+            color: #7f8c8d;
+            border: none;
+            padding: 0;
+            border-radius: 50%;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 18px;
+            font-weight: normal;
+            transition: all 0.2s ease;
+            z-index: 1000;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .back-button:hover {
+            background: rgba(255,255,255,0.95);
+            color: #2c3e50;
+            border-radius: 22px;
+            width: auto;
+            min-width: 170px;
+            padding: 0 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .back-button-text {
+            opacity: 0;
+            margin-left: 0;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+            font-size: 13px;
+            font-weight: normal;
+            width: 0;
+            overflow: hidden;
+        }
+
+        .back-button:hover .back-button-text {
+            opacity: 1;
+            width: auto;
+            margin-left: 8px;
+        }
+
+        .back-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .back-button:not(:hover) {
+            justify-content: center;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 40px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 5px solid #667eea;
+        }
+
+        .section h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .section h3 {
+            color: #34495e;
+            margin: 25px 0 15px 0;
+            font-size: 1.2em;
+        }
+
+        .step {
+            background: white;
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            position: relative;
+        }
+
+        .step-number {
+            position: absolute;
+            top: -10px;
+            left: 20px;
+            background: #667eea;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .step-content {
+            margin-left: 40px;
+        }
+
+        .image-placeholder {
+            background: #e8f4fd;
+            border: 2px dashed #2980b9;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            color: #2980b9;
+            font-style: italic;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            color: #856404;
+        }
+
+        .warning strong {
+            color: #d63031;
+        }
+
+        .tip {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            color: #0c5460;
+        }
+
+        .code-block {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+
+        ul, ol {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+
+        li {
+            margin-bottom: 12px;
+            line-height: 1.4;
+        }
+
+        .section ul li:last-child {
+            margin-bottom: 0;
+        }
+
+        .prerequisites {
+            background: #e8f5e8;
+            border: 1px solid #c3e6c3;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .prerequisites h3 {
+            color: #155724;
+            margin-bottom: 15px;
+        }
+
+        .device-selector {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .device-btn {
+            flex: 1;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 25px 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .device-btn:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.1);
+        }
+
+        .device-btn.active {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
+        }
+
+        .device-icon {
+            font-size: 2em;
+        }
+
+        .device-title {
+            font-size: 1.2em;
+            font-weight: 600;
+        }
+
+        .device-desc {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .instructions-content {
+            display: none;
+        }
+
+        .instructions-content.active {
+            display: block;
+        }
+
+        .sub-steps {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #667eea;
+        }
+
+        .sub-steps h4 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .sub-steps p {
+            margin-bottom: 15px;
+        }
+
+        .image-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .instruction-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border: 1px solid #e0e0e0;
+        }
+
+        .instruction-image:hover {
+            transform: scale(1.02);
+            transition: transform 0.3s ease;
+        }
+
+        .step-content:not(:has(.image-container)) {
+            padding-bottom: 20px;
+        }
+
+        .sub-steps:not(:has(.image-container)) {
+            padding-bottom: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+
+            .content {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+
+            .back-button {
+                top: 20px;
+                left: 20px;
+                width: 40px;
+                height: 40px;
+                font-size: 16px;
+            }
+
+            .back-button:hover {
+                width: auto;
+                min-width: 150px;
+                padding: 0 12px;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+
+            .device-selector {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .device-btn {
+                padding: 20px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <a href="../" class="back-button">
+                <span class="back-arrow">←</span><span class="back-button-text">Back to Key Generator</span>
+            </a>
+            <h1>Using Your Generated Key</h1>
+            <p>Step-by-step guide to apply generated keys to your MeshCore device</p>
+        </div>
+
+        <div class="content">
+            <div class="prerequisites">
+                <h3>📋 Prerequisites</h3>
+                <ul>
+                    <li>
+                        Generated Ed25519 key pair from the
+                        <a href="../" target="_blank" rel="noopener">key generator</a>
+                    </li>
+                    <li>MeshCore device (companion or repeater)</li>
+                    <li>MeshCore mobile app installed on your phone or <a href="https://app.meshcore.nz/" target="_blank" rel="noopener">MeshCore Web App</a></li>
+                    <li>USB-C cable for connecting to your device</li>
+                    <li>Computer with internet access (for flashing repeater devices)</li>
+                </ul>
+            </div>
+
+            <div class="section">
+                <h2>🔧 Select Your Device Type</h2>
+                <p>Choose your device type to see the appropriate instructions:</p>
+                
+                <div class="device-selector">
+                    <button class="device-btn active" data-type="companion">
+                        <span class="device-icon">📱</span>
+                        <span class="device-title">Companion</span>
+                        <span class="device-desc">Direct key import via app</span>
+                    </button>
+                    <button class="device-btn" data-type="repeater">
+                        <span class="device-icon">📡</span>
+                        <span class="device-title">Repeater</span>
+                        <span class="device-desc">Requires firmware flashing</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="section instructions-content active" id="companion-instructions">
+                <h2>🔧 Companion Device Instructions</h2>
+                <p>Follow these steps to apply your custom key to a companion device:</p>
+
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Connect to Your Device</h3>
+                        <p>Connect your phone to the MeshCore device using a USB-C cable or Bluetooth.</p>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Open MeshCore App</h3>
+                        <p>Launch the MeshCore mobile app on your phone and connect to your device.</p>
+                        <div class="image-container">
+                            <img src="images/02_Connect.jpg" alt="MeshCore app home screen showing connected device" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Access Settings</h3>
+                        <p>Tap the Settings gear icon in the top-right corner of the app.</p>
+                        <div class="image-container">
+                            <img src="images/03_Settings.jpg" alt="MeshCore app with settings gear icon highlighted" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Manage Identity Key</h3>
+                        <p>Scroll down and tap "Manage Identity Key" in the settings menu.</p>
+                        <div class="image-container">
+                            <img src="images/04_Manage_Identity_Key.jpg" alt="Settings menu with Manage Identity Key option highlighted" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <h3>Enter Private Key</h3>
+                        <p>Copy your private key from the key generator and paste it into the text box. Make sure to copy the entire 128-character key.</p>
+                        <div class="image-container">
+                            <img src="images/05_Paste_Private_Key.png" alt="Private key input field with sample key pasted" class="instruction-image">
+                        </div>
+                        <div class="warning">
+                            <strong>Important:</strong> Only paste the private key, not the public key. The private key is 128 characters long.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">6</div>
+                    <div class="step-content">
+                        <h3>Import the Key</h3>
+                        <p>Tap "Import Private Key" to apply the key to your device.</p>
+                        <div class="image-container">
+                            <img src="images/06_Import_Private_Key.jpg" alt="Import Private Key button highlighted" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">7</div>
+                    <div class="step-content">
+                        <h3>Save Changes</h3>
+                        <p>Tap the checkmark ✓ in the top-right corner to save your changes. This step is crucial - the key won't be applied until you save.</p>
+                        <div class="image-container">
+                            <img src="images/07_Checkmark_Save_Settings.jpg" alt="Checkmark save button highlighted in top-right corner" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">8</div>
+                    <div class="step-content">
+                        <h3>Verify the Change</h3>
+                        <p>Return to the main screen and verify that your new public key is displayed. The first two characters should match your desired prefix.</p>
+                        <div class="image-container">
+                            <img src="images/08_Verify_Change.jpg" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section instructions-content" id="repeater-instructions">
+                <h2>📡 Repeater Device Instructions</h2>
+                <p>Repeater devices require a temporary firmware change to import keys. Follow these steps:</p>
+
+                <div class="warning">
+                    <strong>⚠️ Important:</strong> You must temporarily flash companion firmware to import keys on repeater devices.
+                </div>
+
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Prepare for Firmware Flash</h3>
+                        <p>Connect your repeater device to your computer using a USB-C cable. You'll need to temporarily flash it with companion firmware.</p>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Access the Flasher</h3>
+                        <p>Open your web browser and go to <a href="https://flasher.meshcore.co.uk/" target="_blank">https://flasher.meshcore.co.uk/</a></p>
+                        <p>Select the type of device you are flashing from the list of available firmware options.</p>
+                        <div class="image-container">
+                            <img src="images/Repeater_02_Flasher.png" alt="MeshCore flasher website homepage" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Select Companion Firmware</h3>
+                        <p>Choose "Companion" firmware from the firmware selection options. Do not select "Repeater" firmware.</p>
+                        <div class="image-container">
+                            <img src="images/Repeater_03_Select_Client_Firmware.png" alt="Firmware selection screen with Companion option highlighted" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Flash the Firmware</h3>
+                        <p>Follow the on-screen instructions to flash the companion firmware to your device. This process may take a few minutes.</p>
+                        <div class="warning">
+                            <strong>⚠️ Important:</strong> Do not select "Erase Device" during the flashing process. This will erase all configuration and require you to set up the device from scratch.
+                        </div>
+                        <div class="image-container">
+                            <img src="images/Repeater_04_Flash_Firmware.png" alt="Flashing progress screen" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <h3>Import Your Key</h3>
+                        <p>Now that your device has companion firmware, follow these steps to import your custom key:</p>
+                        
+                        <div class="sub-steps">
+                            <h4>5a. Connect to Your Device</h4>
+                            <p>Connect your phone to the MeshCore device using a USB-C cable or Bluetooth.</p>
+                        </div>
+
+                        <div class="sub-steps">
+                            <h4>5b. Open MeshCore App</h4>
+                            <p>Launch the MeshCore mobile app on your phone. The app should automatically detect the connected device.</p>
+                            <div class="image-container">
+                                <img src="images/02_Connect.jpg" alt="MeshCore app home screen showing connected device" class="instruction-image">
+                            </div>
+                        </div>
+
+                        <div class="sub-steps">
+                            <h4>5c. Access Settings</h4>
+                            <p>Tap the Settings gear icon in the top-right corner of the app.</p>
+                            <div class="image-container">
+                                <img src="images/03_Settings.jpg" alt="MeshCore app with settings gear icon highlighted" class="instruction-image">
+                            </div>
+                        </div>
+
+                        <div class="sub-steps">
+                            <h4>5d. Manage Identity Key</h4>
+                            <p>Scroll down and tap "Manage Identity Key" in the settings menu.</p>
+                            <div class="image-container">
+                                <img src="images/04_Manage_Identity_Key.jpg" alt="Settings menu with Manage Identity Key option highlighted" class="instruction-image">
+                            </div>
+                        </div>
+
+                        <div class="sub-steps">
+                            <h4>5e. Enter Private Key</h4>
+                            <p>Copy your private key from the key generator and paste it into the text box. Make sure to copy the entire 128-character key.</p>
+                            <div class="image-container">
+                                <img src="images/05_Paste_Private_Key.png" alt="Private key input field with sample key pasted" class="instruction-image">
+                            </div>
+                            <div class="warning">
+                                <strong>Important:</strong> Only paste the private key, not the public key. The private key is 128 characters long.
+                            </div>
+                        </div>
+
+                        <div class="sub-steps">
+                            <h4>5f. Import the Key</h4>
+                            <p>Tap "Import Private Key" to apply the key to your device.</p>
+                            <div class="image-container">
+                                <img src="images/06_Import_Private_Key.jpg" alt="Import Private Key button highlighted" class="instruction-image">
+                            </div>
+                        </div>
+
+                        <div class="sub-steps">
+                            <h4>5g. Save Changes</h4>
+                            <p>Tap the checkmark ✓ in the top-right corner to save your changes. This step is crucial - the key won't be applied until you save.</p>
+                            <div class="image-container">
+                                <img src="images/07_Checkmark_Save_Settings.jpg" alt="Checkmark save button highlighted in top-right corner" class="instruction-image">
+                            </div>
+                        </div>
+
+                        <div class="sub-steps">
+                            <h4>5h. Verify the Change</h4>
+                            <p>Return to the main screen and verify that your new public key is displayed. The first two characters should match your desired prefix.</p>
+                            <div class="image-container">
+                                <img src="images/08_Verify_Change.jpg" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">6</div>
+                    <div class="step-content">
+                        <h3>Re-flash to Repeater Firmware</h3>
+                        <p>After successfully importing your key, return to the flasher website and flash the "Repeater" firmware back to your device.</p>
+                        <div class="image-container">
+                            <img src="images/Repeater_06_Flash_Repeater_Firmware.png" alt="Firmware selection screen with Repeater option highlighted" class="instruction-image">
+                        </div>
+                        <div class="warning">
+                            <strong>Important:</strong> Your custom key will be preserved after re-flashing to repeater firmware.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>📄 JSON Import Method (Alternative)</h2>
+                <p>If you downloaded the JSON file from the key generator, you can use this alternative method:</p>
+
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Access Import Config</h3>
+                        <p>In the MeshCore app settings, tap "Import Config" instead of "Manage Identity Key".</p>
+                        <div class="image-container">
+                            <img src="images/JSON_01_Import_Config.jpg" alt="Settings menu with Import Config option highlighted" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Select JSON File</h3>
+                        <p>Click Select File to open your OS's file picker. Choose your downloaded JSON file from the file picker. The file should be named something like <code>meshcore_FA_1234567890.json</code>.</p>
+                        <div class="image-container">
+                            <img src="images/JSON_02_Select_File.jpg" alt="File picker showing JSON file selection" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Import Configuration</h3>
+                        <p>Tap "Import Config" to import the keys from your JSON file.</p>
+                        <div class="image-container">
+                            <img src="images/JSON_03_Import_Config.jpg" alt="Import Config button highlighted" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Import Success</h3>
+                        <p>You'll see a success notification confirming that the configuration has been imported.</p>
+                        <div class="image-container">
+                            <img src="images/JSON_04_Import_Success_Notification.jpeg" alt="Import success notification" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <h3>Verify the Import</h3>
+                        <p>Return to the main screen and verify that your new public key is displayed. The first two characters should match your desired prefix.</p>
+                        <div class="image-container">
+                            <img src="images/JSON_05_Verify_Result.jpg" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>🔍 Troubleshooting</h2>
+
+                <h3>Common Issues</h3>
+                <ul>
+                    <li><strong>Key not appearing:</strong> Make sure you tapped the checkmark ✓ to save changes</li>
+                    <li><strong>Wrong key format:</strong> Ensure you're copying the entire 128-character private key</li>
+                    <li><strong>App not detecting device:</strong> Try disconnecting and reconnecting the USB cable</li>
+                    <li><strong>Firmware flash fails:</strong> Try a different USB cable or USB port</li>
+                    <li><strong>Key import fails:</strong> Verify the key was generated correctly and try again</li>
+                </ul>
+
+                <h3>Verification Steps</h3>
+                <ol>
+                    <li>Check that the public key displayed matches your generated key</li>
+                    <li>Verify the first two characters match your desired prefix</li>
+                    <li>Test the connection to ensure the device is working properly</li>
+                    <li>Check the MeshCore network to see your device with the new identifier</li>
+                </ol>
+
+                <div class="tip">
+                    <strong>Pro Tip:</strong> Keep a backup of your private key in a secure location. You'll need it if you ever need to restore your device configuration.
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>📞 Need Help?</h2>
+                <p>If you encounter issues not covered in this guide:</p>
+                <ul>
+                    <li><a href="https://github.com/meshcore-dev/MeshCore/blob/main/docs/faq.md" target="_blank" rel="noopener">MeshCore Documentation (FAQ)</a></li>
+                    <li><a href="https://discord.gg/bSuST8xvet" target="_blank" rel="noopener">MeshCore Discord Community</a></li>
+                    <li><a href="https://meshcore.co.uk/contact.html" target="_blank" rel="noopener">Contact MeshCore Support</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Device type selector functionality
+        const deviceBtns = document.querySelectorAll('.device-btn');
+        const instructionContents = document.querySelectorAll('.instructions-content');
+
+        deviceBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const selectedType = btn.getAttribute('data-type');
+                
+                // Update button states
+                deviceBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                // Update instruction visibility
+                instructionContents.forEach(content => {
+                    content.classList.remove('active');
+                });
+                
+                const targetContent = document.getElementById(selectedType + '-instructions');
+                if (targetContent) {
+                    targetContent.classList.add('active');
+                }
+                
+                // Smooth scroll to the instructions
+                setTimeout(() => {
+                    targetContent.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'start' 
+                    });
+                }, 100);
+            });
+        });
+
+        // Initialize with companion instructions visible
+        document.addEventListener('DOMContentLoaded', () => {
+            const companionInstructions = document.getElementById('companion-instructions');
+            if (companionInstructions) {
+                companionInstructions.classList.add('active');
+            }
+        });
+    </script>
+</body>
+</html>
