@@ -88,6 +88,14 @@ Filename: `meshcore_[PREFIX]_[TIMESTAMP].json`
 - No network requests during generation
 - Keys never leave your device
 
+## Advanced Usage
+
+For more complex key generation patterns (cosmetic patterns, longer prefixes, multi-processing), see the [Python version](https://github.com/agessaman/meshcore-keygen) which supports:
+- Multi-threaded generation for faster performance
+- Cosmetic pattern matching (palindromic keys, etc.)
+- Watchlist monitoring for multiple patterns
+- Advanced pattern modes and batch processing
+
 ## Troubleshooting
 
 **Slow performance**: Close other tabs, use desktop, try shorter prefixes
