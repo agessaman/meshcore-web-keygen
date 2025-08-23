@@ -23,7 +23,7 @@
 
         .container {
             max-width: 800px;
-            margin: 0 auto;
+            margin: 0 auto 40px auto;
             background: white;
             border-radius: 15px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
@@ -407,6 +407,25 @@
             transform: translateY(-1px);
         }
 
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            margin-top: 40px;
+        }
+
+        .footer a {
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .footer a:hover {
+            color: white;
+            text-decoration: underline;
+        }
+
         @media (max-width: 600px) {
             .container {
                 margin: 10px;
@@ -483,23 +502,10 @@
                             </ol>
                         </div>
                         
-                        <div class="import-section">
-                            <h4>📄 Alternative: JSON Import</h4>
-                            <p>If you downloaded the JSON file from this keygen:</p>
-                            <ol>
-                                <li>In the MeshCore app settings, tap <strong>Import Config</strong></li>
-                                <li>Select your downloaded JSON file</li>
-                                <li>The public and private keys will be automatically imported</li>
-                            </ol>
-                        </div>
-                        
-                        <div class="import-section">
-                            <h4>💡 Tips</h4>
-                            <ul>
-                                <li>Make sure to copy the <strong>entire</strong> private key (128 characters)</li>
-                                <li>The new public key won't appear until you save the settings</li>
-                                <li>Keep your private key secure and never share it</li>
-                            </ul>
+                        <div class="import-section" style="text-align: center; margin-top: 20px;">
+                            <a href="./instructions" style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: 600; transition: all 0.3s ease;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 20px rgba(102, 126, 234, 0.3)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'">
+                                📋 View Complete Step-by-Step Instructions
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -587,6 +593,13 @@
     <a href="./instructions" class="floating-info" title="View detailed instructions">
         📋
     </a>
+
+    <!-- Footer -->
+    <div class="footer">
+        <a href="https://github.com/agessaman/meshcore-web-keygen" target="_blank" rel="noopener">
+            📦 View on GitHub
+        </a>
+    </div>
 
     <script>
         // Web Crypto API Ed25519 implementation

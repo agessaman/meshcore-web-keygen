@@ -14,6 +14,7 @@
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-attachment: fixed;
             min-height: 100vh;
             padding: 20px;
             line-height: 1.6;
@@ -26,6 +27,7 @@
             border-radius: 15px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.1);
             overflow: hidden;
+            padding-bottom: 20px;
         }
 
         .header {
@@ -50,23 +52,23 @@
             position: fixed;
             top: 30px;
             left: 30px;
-            background: rgba(255,255,255,0.8);
-            color: #7f8c8d;
+            background: rgba(255,255,255,0.9);
+            color: #2c3e50;
             border: none;
             padding: 0;
             border-radius: 50%;
             cursor: pointer;
             text-decoration: none;
             font-size: 18px;
-            font-weight: normal;
-            transition: all 0.2s ease;
+            font-weight: 600;
+            transition: all 0.3s ease;
             z-index: 1000;
             width: 44px;
             height: 44px;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
         }
 
         .back-button:hover {
@@ -76,7 +78,8 @@
             width: auto;
             min-width: 170px;
             padding: 0 16px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 12px 35px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
         }
 
         .back-button-text {
@@ -107,15 +110,20 @@
         }
 
         .content {
-            padding: 40px;
+            padding: 40px 40px 20px 40px;
         }
 
         .section {
-            margin-bottom: 40px;
+            margin-bottom: 30px;
             padding: 25px;
-            background: #f8f9fa;
-            border-radius: 10px;
+            background: white;
+            border-radius: 15px;
             border-left: 5px solid #667eea;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .section:last-child {
+            margin-bottom: 0;
         }
 
         .section h2 {
@@ -131,12 +139,13 @@
         }
 
         .step {
-            background: white;
+            background: #f8f9fa;
             padding: 20px;
             margin: 15px 0;
-            border-radius: 8px;
+            border-radius: 10px;
             border: 1px solid #e0e0e0;
             position: relative;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
         .step-number {
@@ -219,9 +228,10 @@
         .prerequisites {
             background: #e8f5e8;
             border: 1px solid #c3e6c3;
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 20px;
             margin-bottom: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
         .prerequisites h3 {
@@ -248,19 +258,20 @@
             flex-direction: column;
             align-items: center;
             gap: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
         .device-btn:hover {
             border-color: #667eea;
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.1);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
 
         .device-btn.active {
             border-color: #667eea;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
 
         .device-icon {
@@ -286,12 +297,13 @@
         }
 
         .sub-steps {
-            background: #f8f9fa;
+            background: white;
             border: 1px solid #e0e0e0;
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 20px;
             margin: 15px 0;
             border-left: 4px solid #667eea;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
 
         .sub-steps h4 {
@@ -312,14 +324,15 @@
         .instruction-image {
             max-width: 100%;
             height: auto;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
             border: 1px solid #e0e0e0;
         }
 
         .instruction-image:hover {
             transform: scale(1.02);
             transition: transform 0.3s ease;
+            box-shadow: 0 12px 35px rgba(0,0,0,0.15);
         }
 
         .step-content:not(:has(.image-container)) {
@@ -370,6 +383,25 @@
             .device-btn {
                 padding: 20px 15px;
             }
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            margin-top: 40px;
+        }
+
+        .footer a {
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .footer a:hover {
+            color: white;
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -434,7 +466,7 @@
                         <h3>Open MeshCore App</h3>
                         <p>Launch the MeshCore mobile app on your phone and connect to your device.</p>
                         <div class="image-container">
-                            <img src="images/02_Connect.jpg" alt="MeshCore app home screen showing connected device" class="instruction-image">
+                            <img src="images/02_Connect.webp" alt="MeshCore app home screen showing connected device" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -445,7 +477,7 @@
                         <h3>Access Settings</h3>
                         <p>Tap the Settings gear icon in the top-right corner of the app.</p>
                         <div class="image-container">
-                            <img src="images/03_Settings.jpg" alt="MeshCore app with settings gear icon highlighted" class="instruction-image">
+                            <img src="images/03_Settings.webp" alt="MeshCore app with settings gear icon highlighted" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -456,7 +488,7 @@
                         <h3>Manage Identity Key</h3>
                         <p>Scroll down and tap "Manage Identity Key" in the settings menu.</p>
                         <div class="image-container">
-                            <img src="images/04_Manage_Identity_Key.jpg" alt="Settings menu with Manage Identity Key option highlighted" class="instruction-image">
+                            <img src="images/04_Manage_Identity_Key.webp" alt="Settings menu with Manage Identity Key option highlighted" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -467,7 +499,7 @@
                         <h3>Enter Private Key</h3>
                         <p>Copy your private key from the key generator and paste it into the text box. Make sure to copy the entire 128-character key.</p>
                         <div class="image-container">
-                            <img src="images/05_Paste_Private_Key.png" alt="Private key input field with sample key pasted" class="instruction-image">
+                            <img src="images/05_Paste_Private_Key.webp" alt="Private key input field with sample key pasted" class="instruction-image">
                         </div>
                         <div class="warning">
                             <strong>Important:</strong> Only paste the private key, not the public key. The private key is 128 characters long.
@@ -481,7 +513,7 @@
                         <h3>Import the Key</h3>
                         <p>Tap "Import Private Key" to apply the key to your device.</p>
                         <div class="image-container">
-                            <img src="images/06_Import_Private_Key.jpg" alt="Import Private Key button highlighted" class="instruction-image">
+                            <img src="images/06_Import_Private_Key.webp" alt="Import Private Key button highlighted" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -492,7 +524,7 @@
                         <h3>Save Changes</h3>
                         <p>Tap the checkmark ✓ in the top-right corner to save your changes. This step is crucial - the key won't be applied until you save.</p>
                         <div class="image-container">
-                            <img src="images/07_Checkmark_Save_Settings.jpg" alt="Checkmark save button highlighted in top-right corner" class="instruction-image">
+                            <img src="images/07_Checkmark_Save_Settings.webp" alt="Checkmark save button highlighted in top-right corner" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -503,7 +535,7 @@
                         <h3>Verify the Change</h3>
                         <p>Return to the main screen and verify that your new public key is displayed. The first two characters should match your desired prefix.</p>
                         <div class="image-container">
-                            <img src="images/08_Verify_Change.jpg" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
+                            <img src="images/08_Verify_Change.webp" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -532,7 +564,7 @@
                         <p>Open your web browser and go to <a href="https://flasher.meshcore.co.uk/" target="_blank">https://flasher.meshcore.co.uk/</a></p>
                         <p>Select the type of device you are flashing from the list of available firmware options.</p>
                         <div class="image-container">
-                            <img src="images/Repeater_02_Flasher.png" alt="MeshCore flasher website homepage" class="instruction-image">
+                            <img src="images/Repeater_02_Flasher.webp" alt="MeshCore flasher website homepage" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -543,7 +575,7 @@
                         <h3>Select Companion Firmware</h3>
                         <p>Choose "Companion" firmware from the firmware selection options. Do not select "Repeater" firmware.</p>
                         <div class="image-container">
-                            <img src="images/Repeater_03_Select_Client_Firmware.png" alt="Firmware selection screen with Companion option highlighted" class="instruction-image">
+                            <img src="images/Repeater_03_Select_Client_Firmware.webp" alt="Firmware selection screen with Companion option highlighted" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -557,7 +589,7 @@
                             <strong>⚠️ Important:</strong> Do not select "Erase Device" during the flashing process. This will erase all configuration and require you to set up the device from scratch.
                         </div>
                         <div class="image-container">
-                            <img src="images/Repeater_04_Flash_Firmware.png" alt="Flashing progress screen" class="instruction-image">
+                            <img src="images/Repeater_04_Flash_Firmware.webp" alt="Flashing progress screen" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -577,7 +609,7 @@
                             <h4>5b. Open MeshCore App</h4>
                             <p>Launch the MeshCore mobile app on your phone. The app should automatically detect the connected device.</p>
                             <div class="image-container">
-                                <img src="images/02_Connect.jpg" alt="MeshCore app home screen showing connected device" class="instruction-image">
+                                <img src="images/02_Connect.webp" alt="MeshCore app home screen showing connected device" class="instruction-image">
                             </div>
                         </div>
 
@@ -585,7 +617,7 @@
                             <h4>5c. Access Settings</h4>
                             <p>Tap the Settings gear icon in the top-right corner of the app.</p>
                             <div class="image-container">
-                                <img src="images/03_Settings.jpg" alt="MeshCore app with settings gear icon highlighted" class="instruction-image">
+                                <img src="images/03_Settings.webp" alt="MeshCore app with settings gear icon highlighted" class="instruction-image">
                             </div>
                         </div>
 
@@ -593,7 +625,7 @@
                             <h4>5d. Manage Identity Key</h4>
                             <p>Scroll down and tap "Manage Identity Key" in the settings menu.</p>
                             <div class="image-container">
-                                <img src="images/04_Manage_Identity_Key.jpg" alt="Settings menu with Manage Identity Key option highlighted" class="instruction-image">
+                                <img src="images/04_Manage_Identity_Key.webp" alt="Settings menu with Manage Identity Key option highlighted" class="instruction-image">
                             </div>
                         </div>
 
@@ -601,7 +633,7 @@
                             <h4>5e. Enter Private Key</h4>
                             <p>Copy your private key from the key generator and paste it into the text box. Make sure to copy the entire 128-character key.</p>
                             <div class="image-container">
-                                <img src="images/05_Paste_Private_Key.png" alt="Private key input field with sample key pasted" class="instruction-image">
+                                <img src="images/05_Paste_Private_Key.webp" alt="Private key input field with sample key pasted" class="instruction-image">
                             </div>
                             <div class="warning">
                                 <strong>Important:</strong> Only paste the private key, not the public key. The private key is 128 characters long.
@@ -612,7 +644,7 @@
                             <h4>5f. Import the Key</h4>
                             <p>Tap "Import Private Key" to apply the key to your device.</p>
                             <div class="image-container">
-                                <img src="images/06_Import_Private_Key.jpg" alt="Import Private Key button highlighted" class="instruction-image">
+                                <img src="images/06_Import_Private_Key.webp" alt="Import Private Key button highlighted" class="instruction-image">
                             </div>
                         </div>
 
@@ -620,7 +652,7 @@
                             <h4>5g. Save Changes</h4>
                             <p>Tap the checkmark ✓ in the top-right corner to save your changes. This step is crucial - the key won't be applied until you save.</p>
                             <div class="image-container">
-                                <img src="images/07_Checkmark_Save_Settings.jpg" alt="Checkmark save button highlighted in top-right corner" class="instruction-image">
+                                <img src="images/07_Checkmark_Save_Settings.webp" alt="Checkmark save button highlighted in top-right corner" class="instruction-image">
                             </div>
                         </div>
 
@@ -628,7 +660,7 @@
                             <h4>5h. Verify the Change</h4>
                             <p>Return to the main screen and verify that your new public key is displayed. The first two characters should match your desired prefix.</p>
                             <div class="image-container">
-                                <img src="images/08_Verify_Change.jpg" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
+                                <img src="images/08_Verify_Change.webp" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
                             </div>
                         </div>
                     </div>
@@ -640,7 +672,7 @@
                         <h3>Re-flash to Repeater Firmware</h3>
                         <p>After successfully importing your key, return to the flasher website and flash the "Repeater" firmware back to your device.</p>
                         <div class="image-container">
-                            <img src="images/Repeater_06_Flash_Repeater_Firmware.png" alt="Firmware selection screen with Repeater option highlighted" class="instruction-image">
+                            <img src="images/Repeater_06_Flash_Repeater_Firmware.webp" alt="Firmware selection screen with Repeater option highlighted" class="instruction-image">
                         </div>
                         <div class="warning">
                             <strong>Important:</strong> Your custom key will be preserved after re-flashing to repeater firmware.
@@ -659,7 +691,7 @@
                         <h3>Access Import Config</h3>
                         <p>In the MeshCore app settings, tap "Import Config" instead of "Manage Identity Key".</p>
                         <div class="image-container">
-                            <img src="images/JSON_01_Import_Config.jpg" alt="Settings menu with Import Config option highlighted" class="instruction-image">
+                            <img src="images/JSON_01_Import_Config.webp" alt="Settings menu with Import Config option highlighted" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -670,7 +702,7 @@
                         <h3>Select JSON File</h3>
                         <p>Click Select File to open your OS's file picker. Choose your downloaded JSON file from the file picker. The file should be named something like <code>meshcore_FA_1234567890.json</code>.</p>
                         <div class="image-container">
-                            <img src="images/JSON_02_Select_File.jpg" alt="File picker showing JSON file selection" class="instruction-image">
+                            <img src="images/JSON_02_Select_File.webp" alt="File picker showing JSON file selection" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -681,7 +713,7 @@
                         <h3>Import Configuration</h3>
                         <p>Tap "Import Config" to import the keys from your JSON file.</p>
                         <div class="image-container">
-                            <img src="images/JSON_03_Import_Config.jpg" alt="Import Config button highlighted" class="instruction-image">
+                            <img src="images/JSON_03_Import_Config.webp" alt="Import Config button highlighted" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -692,7 +724,7 @@
                         <h3>Import Success</h3>
                         <p>You'll see a success notification confirming that the configuration has been imported.</p>
                         <div class="image-container">
-                            <img src="images/JSON_04_Import_Success_Notification.jpeg" alt="Import success notification" class="instruction-image">
+                            <img src="images/JSON_04_Import_Success_Notification.webp" alt="Import success notification" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -703,7 +735,7 @@
                         <h3>Verify the Import</h3>
                         <p>Return to the main screen and verify that your new public key is displayed. The first two characters should match your desired prefix.</p>
                         <div class="image-container">
-                            <img src="images/JSON_05_Verify_Result.jpg" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
+                            <img src="images/JSON_05_Verify_Result.webp" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
                         </div>
                     </div>
                 </div>
@@ -744,6 +776,13 @@
                 </ul>
             </div>
         </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <a href="https://github.com/agessaman/meshcore-web-keygen" target="_blank" rel="noopener">
+            📦 View on GitHub
+        </a>
     </div>
 
     <script>
