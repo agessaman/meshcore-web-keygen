@@ -470,6 +470,7 @@
                 </ul>
             </div>
 
+
             <!-- Import Instructions Modal -->
             <div id="importModal" class="modal" style="display: none;">
                 <div class="modal-content">
@@ -1095,8 +1096,31 @@
             const prefix = e.target.value.trim().toUpperCase();
             if (/^[0-9A-F]*$/.test(prefix)) {
                 updateDifficultyEstimate(prefix);
+                checkReservedPrefix(prefix);
             }
         });
+
+        // Check for reserved prefixes and show warning
+        function checkReservedPrefix(prefix) {
+            const existingWarning = document.getElementById('reservedPrefixWarning');
+            if (existingWarning) {
+                existingWarning.remove();
+            }
+
+            if (prefix === '00' || prefix === 'FF') {
+                const warningDiv = document.createElement('div');
+                warningDiv.id = 'reservedPrefixWarning';
+                warningDiv.style.cssText = 'background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 12px; margin-top: 10px; color: #856404; font-size: 14px;';
+                warningDiv.innerHTML = `<strong>⚠️ Warning:</strong> The prefix "${prefix}" is reserved by MeshCore and may cause unexpected behavior in the network.`;
+                
+                const prefixInfo = document.getElementById('prefixInfo');
+                if (prefixInfo && prefixInfo.style.display !== 'none') {
+                    prefixInfo.parentNode.insertBefore(warningDiv, prefixInfo.nextSibling);
+                } else {
+                    targetPrefixInput.parentNode.appendChild(warningDiv);
+                }
+            }
+        }
 
         // Form submission
         form.addEventListener('submit', async (e) => {
@@ -1125,6 +1149,7 @@
                 showError('Prefix must contain only hexadecimal characters (0-9, A-F).');
                 return;
             }
+
 
             // Hide previous results and errors
             hideError();
@@ -1279,6 +1304,7 @@
             if (/^[0-9A-F]+$/.test(cleanPrefix) && cleanPrefix.length <= 8) {
                 targetPrefixInput.value = cleanPrefix;
                 updateDifficultyEstimate(cleanPrefix);
+                checkReservedPrefix(cleanPrefix);
             }
         }
 
