@@ -663,13 +663,13 @@
                 }
             }
 
-            // Generate a MeshCore-compatible Ed25519 keypair using the CORRECT algorithm
-            // This matches the Python implementation exactly:
+            // Generate a MeshCore-compatible Ed25519 keypair using RFC 8032 standard
+            // This follows the official Ed25519 specification:
             // 1. Generate 32-byte random seed
-            // 2. SHA512 hash the seed
-            // 3. Manually clamp the first 32 bytes (scalar clamping)
+            // 2. SHA512 hash the seed to get 64 bytes
+            // 3. Clamp the first 32 bytes (scalar clamping)
             // 4. Use crypto_scalarmult_ed25519_base_noclamp to get public key
-            // 5. Private key = [clamped_scalar][random_filler]
+            // 5. Private key = [clamped_scalar][sha512_second_half] (RFC 8032 compliant)
             async generateMeshCoreKeypair() {
                 // Ensure library is loaded
                 await this.initialize();
@@ -745,12 +745,11 @@
                     }
                 }
                 
-                // Step 5: Create 64-byte private key: [clamped_scalar][random_filler]
-                // This matches the Python implementation exactly
-                const filler = crypto.getRandomValues(new Uint8Array(32));
+                // Step 5: Create 64-byte private key: [clamped_scalar][sha512_second_half]
+                // This follows RFC 8032 Ed25519 standard: use second half of SHA-512(seed)
                 const meshcorePrivateKey = new Uint8Array(64);
-                meshcorePrivateKey.set(clamped, 0);  // First 32 bytes: clamped scalar
-                meshcorePrivateKey.set(filler, 32);  // Second 32 bytes: random filler
+                meshcorePrivateKey.set(clamped, 0);                    // First 32 bytes: clamped scalar
+                meshcorePrivateKey.set(digestArray.slice(32, 64), 32); // Second 32 bytes: SHA-512(seed)[32:64]
                 
                 return { 
                     publicKey: publicKeyBytes, 
@@ -1247,7 +1246,7 @@
             validationStatus.innerHTML = `
                 <div class="key-label">Validation Status:</div>
                 <div class="key-value" style="color: #27ae60; font-weight: bold;">
-                    ✓ Full Ed25519 validation passed - Scalar clamping, key consistency, and cryptographic verification confirmed
+                    ✓ RFC 8032 Ed25519 compliant - Proper SHA-512 expansion, scalar clamping, and key consistency verified
                 </div>
             `;
             
