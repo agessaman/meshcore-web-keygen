@@ -245,7 +245,7 @@
 
         .device-selector {
             display: flex;
-            gap: 20px;
+            gap: 15px;
             margin: 20px 0;
         }
 
@@ -398,7 +398,7 @@
 
             .device-selector {
                 flex-direction: column;
-                gap: 15px;
+                gap: 12px;
             }
 
             .device-btn {
@@ -452,18 +452,23 @@
             </div>
 
             <div class="section">
-                <h2>🔧 Select Your Device Type</h2>
-                <p>Choose your device type to see the appropriate instructions:</p>
+                <h2>🔧 Select Your Setup</h2>
+                <p>Choose your setup to see the appropriate instructions:</p>
                 
                 <div class="device-selector">
                     <button class="device-btn active" data-type="companion">
                         <span class="device-icon">📱</span>
-                        <span class="device-title">Companion</span>
+                        <span class="device-title">Companion Device</span>
                         <span class="device-desc">Direct key import via app</span>
                     </button>
-                    <button class="device-btn" data-type="repeater">
+                    <button class="device-btn" data-type="repeater-serial">
+                        <span class="device-icon">💻</span>
+                        <span class="device-title">Repeater + Computer</span>
+                        <span class="device-desc">Direct console command</span>
+                    </button>
+                    <button class="device-btn" data-type="repeater-flash">
                         <span class="device-icon">📡</span>
-                        <span class="device-title">Repeater</span>
+                        <span class="device-title">Repeater (No Computer)</span>
                         <span class="device-desc">Requires firmware flashing</span>
                     </button>
                 </div>
@@ -562,8 +567,65 @@
                 </div>
             </div>
 
-            <div class="section instructions-content" id="repeater-instructions">
-                <h2>📡 Repeater Device Instructions</h2>
+            <div class="section instructions-content" id="repeater-serial-instructions">
+                <h2>💻 Repeater + Computer Instructions</h2>
+                <p>If you can connect your repeater directly to a computer, this is the fastest method:</p>
+
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Connect via USB Serial</h3>
+                        <p>Connect your repeater device to your computer via USB serial connection.</p>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Access the Console</h3>
+                        <p>Open the <a href="https://flasher.meshcore.co.uk/" target="_blank">MeshCore Web Console</a> or use any terminal application to connect to your device.</p>
+                        <div class="tip">
+                            <strong>💡 Tip:</strong> The web console at flasher.meshcore.co.uk provides an easy interface with repeater configuration command reference for configuring your device.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Set the Private Key</h3>
+                        <p>Run the following command in the console:</p>
+                        <div class="code-block">
+                            set prv.key &lt;your_private_key&gt;
+                        </div>
+                        <p>Replace <code>&lt;your_private_key&gt;</code> with your 128-character private key from the key generator.</p>
+                        <div class="warning">
+                            <strong>Important:</strong> Make sure to use the complete 128-character private key. The command will change the device's private key immediately.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Verify the Change</h3>
+                        <p>You can verify the key change by checking the device's public key display in settings.</p>
+                    </div>
+                </div>
+
+                <div class="tip">
+                    <strong>💡 Why use the Serial Console?</strong>
+                    <ul>
+                        <li>No need to flash companion firmware</li>
+                        <li>Change the key on the spot without switching firmware</li>
+                        <li>Quick if you’re comfortable using a console</li>
+                        <li>Works with MeshCore web console or any terminal app</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="section instructions-content" id="repeater-flash-instructions">
+                <h2>📡 Repeater (No Computer) Instructions</h2>
                 <div class="warning">
                     <strong>⚠️ Important:</strong> You must temporarily flash companion firmware to import keys on repeater devices.
                 </div>
@@ -706,7 +768,8 @@
                 </div>
             </div>
 
-            <div class="section">
+
+            <div class="section instructions-content" id="json-import-instructions">
                 <h2>📄 JSON Import Method (Alternative)</h2>
                 <p>If you downloaded the JSON file from the key generator, you can use this alternative method:</p>
 
@@ -814,6 +877,7 @@
         // Device type selector functionality
         const deviceBtns = document.querySelectorAll('.device-btn');
         const instructionContents = document.querySelectorAll('.instructions-content');
+        const jsonImportSection = document.getElementById('json-import-instructions');
 
         deviceBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -833,6 +897,15 @@
                     targetContent.classList.add('active');
                 }
                 
+                // Show/hide JSON import section based on workflow
+                if (jsonImportSection) {
+                    if (selectedType === 'companion' || selectedType === 'repeater-flash') {
+                        jsonImportSection.classList.add('active');
+                    } else {
+                        jsonImportSection.classList.remove('active');
+                    }
+                }
+                
                 // Smooth scroll to the instructions
                 setTimeout(() => {
                     targetContent.scrollIntoView({ 
@@ -848,6 +921,11 @@
             const companionInstructions = document.getElementById('companion-instructions');
             if (companionInstructions) {
                 companionInstructions.classList.add('active');
+            }
+            
+            // Show JSON import section by default (companion workflow)
+            if (jsonImportSection) {
+                jsonImportSection.classList.add('active');
             }
         });
     </script>
