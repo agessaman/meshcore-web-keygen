@@ -1107,27 +1107,52 @@
             if (/^[0-9A-F]*$/.test(prefix)) {
                 updateDifficultyEstimate(prefix);
                 checkReservedPrefix(prefix);
+            } else {
+                // If invalid hex characters, disable button
+                generateBtn.disabled = true;
+                // Also check reserved prefix in case user is typing
+                checkReservedPrefix(prefix);
+            }
+            
+            // If prefix is empty, disable button
+            if (prefix.length === 0) {
+                generateBtn.disabled = true;
             }
         });
 
-        // Check for reserved prefixes and show warning
+        // Check for reserved prefixes and show warning, disable button if reserved
         function checkReservedPrefix(prefix) {
             const existingWarning = document.getElementById('reservedPrefixWarning');
             if (existingWarning) {
                 existingWarning.remove();
             }
 
-            if (prefix === '00' || prefix === 'FF') {
+            // Check if prefix is reserved (starts with 00 or FF)
+            const isReserved = prefix.length >= 2 && (prefix.startsWith('00') || prefix.startsWith('FF'));
+            
+            if (isReserved) {
                 const warningDiv = document.createElement('div');
                 warningDiv.id = 'reservedPrefixWarning';
                 warningDiv.style.cssText = 'background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 12px; margin-top: 10px; color: #856404; font-size: 14px;';
-                warningDiv.innerHTML = `<strong>⚠️ Warning:</strong> The prefix "${prefix}" is reserved by MeshCore and may cause unexpected behavior in the network.`;
+                warningDiv.innerHTML = `<strong>⚠️ Warning:</strong> Prefixes starting with "00" or "FF" are reserved by MeshCore and may cause unexpected behavior in the network.`;
                 
                 const prefixInfo = document.getElementById('prefixInfo');
                 if (prefixInfo && prefixInfo.style.display !== 'none') {
                     prefixInfo.parentNode.insertBefore(warningDiv, prefixInfo.nextSibling);
                 } else {
                     targetPrefixInput.parentNode.appendChild(warningDiv);
+                }
+                
+                // Disable the Generate Key button
+                generateBtn.disabled = true;
+            } else {
+                // Enable the Generate Key button if prefix is valid and not reserved
+                // Only enable if prefix is not empty, valid hex, and within length limit
+                if (prefix.length > 0 && /^[0-9A-F]+$/.test(prefix) && prefix.length <= 8) {
+                    generateBtn.disabled = false;
+                } else if (prefix.length === 0) {
+                    // Disable if empty
+                    generateBtn.disabled = true;
                 }
             }
         }
@@ -1157,6 +1182,12 @@
 
             if (!/^[0-9A-F]+$/.test(targetPrefix)) {
                 showError('Prefix must contain only hexadecimal characters (0-9, A-F).');
+                return;
+            }
+
+            // Check for reserved prefixes
+            if (targetPrefix.startsWith('00') || targetPrefix.startsWith('FF')) {
+                showError('Prefixes starting with "00" or "FF" are reserved by MeshCore and cannot be used.');
                 return;
             }
 
@@ -1316,6 +1347,9 @@
                 updateDifficultyEstimate(cleanPrefix);
                 checkReservedPrefix(cleanPrefix);
             }
+        } else {
+            // If no prefix on load, disable the button
+            generateBtn.disabled = true;
         }
 
         // Initialize the form
