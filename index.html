@@ -6,6 +6,7 @@
     <title>MeshCore Custom Key Generator</title>
     <script>
         console.log('✓ Using Web Crypto API for Ed25519 key generation');
+        console.log('✓ CPU cores available:', navigator.hardwareConcurrency || 'unknown');
     </script>
     <style>
         * {
@@ -630,6 +631,9 @@
                 this.lastUpdateTime = null;
                 this.updateInterval = null;
                 this.initialized = false;
+                this.workers = [];
+                this.numWorkers = navigator.hardwareConcurrency || 4; // Use all available CPU cores
+                this.batchSize = Math.max(128, (navigator.hardwareConcurrency || 4) * 32); // Scale batch size with CPU cores
             }
 
             async initialize() {
@@ -671,7 +675,142 @@
                             }
                         }
                     }
+                    
+                    // Initialize Web Workers for parallel CPU processing
+                    await this.initializeWorkers();
                 }
+            }
+
+            async initializeWorkers() {
+                if (this.workers.length > 0) return; // Already initialized
+                
+                // Create worker script
+                const workerScript = `
+                    let nobleEd25519 = null;
+                    
+                    async function loadLibrary() {
+                        if (nobleEd25519) return;
+                        try {
+                            nobleEd25519 = await import('https://unpkg.com/noble-ed25519@latest/esm/index.js');
+                        } catch (e) {
+                            try {
+                                nobleEd25519 = await import('https://cdn.jsdelivr.net/npm/noble-ed25519@latest/esm/index.js');
+                            } catch (e2) {
+                                try {
+                                    nobleEd25519 = await import('https://cdn.skypack.dev/noble-ed25519');
+                                } catch (e3) {
+                                    throw new Error('Failed to load Ed25519 library');
+                                }
+                            }
+                        }
+                    }
+                    
+                    async function generateKeypair() {
+                        await loadLibrary();
+                        
+                        // Generate 32-byte random seed
+                        const seed = crypto.getRandomValues(new Uint8Array(32));
+                        
+                        // Hash the seed with SHA-512
+                        const digest = await crypto.subtle.digest('SHA-512', seed);
+                        const digestArray = new Uint8Array(digest);
+                        
+                        // Clamp the scalar
+                        const clamped = new Uint8Array(digestArray.slice(0, 32));
+                        clamped[0] &= 248;
+                        clamped[31] &= 63;
+                        clamped[31] |= 64;
+                        
+                        // Generate public key
+                        let scalarBigInt = 0n;
+                        for (let i = 0; i < 32; i++) {
+                            scalarBigInt += BigInt(clamped[i]) << BigInt(8 * i);
+                        }
+                        
+                        let publicKey;
+                        try {
+                            publicKey = nobleEd25519.Point.BASE.multiply(scalarBigInt);
+                        } catch (error) {
+                            try {
+                                publicKey = await nobleEd25519.getPublicKey(clamped);
+                            } catch (fallbackError) {
+                                publicKey = nobleEd25519.getPublicKey(clamped);
+                            }
+                        }
+                        
+                        // Convert public key to bytes
+                        let publicKeyBytes;
+                        if (publicKey instanceof Uint8Array) {
+                            publicKeyBytes = publicKey;
+                        } else if (publicKey.toRawBytes) {
+                            publicKeyBytes = publicKey.toRawBytes();
+                        } else if (publicKey.toBytes) {
+                            publicKeyBytes = publicKey.toBytes();
+                        } else if (publicKey.x !== undefined && publicKey.y !== undefined) {
+                            publicKeyBytes = new Uint8Array(32);
+                            const y = publicKey.y;
+                            const x = publicKey.x;
+                            for (let j = 0; j < 31; j++) {
+                                publicKeyBytes[j] = Number((y >> BigInt(8 * j)) & 255n);
+                            }
+                            publicKeyBytes[31] = Number((x & 1n) << 7);
+                        } else {
+                            throw new Error('Unsupported public key format');
+                        }
+                        
+                        // Create private key
+                        const meshcorePrivateKey = new Uint8Array(64);
+                        meshcorePrivateKey.set(clamped, 0);
+                        meshcorePrivateKey.set(digestArray.slice(32, 64), 32);
+                        
+                        // Convert to hex
+                        const toHex = (bytes) => {
+                            return Array.from(bytes)
+                                .map(b => b.toString(16).padStart(2, '0'))
+                                .join('')
+                                .toUpperCase();
+                        };
+                        
+                        return {
+                            publicKey: toHex(publicKeyBytes),
+                            privateKey: toHex(meshcorePrivateKey),
+                            publicKeyBytes: Array.from(publicKeyBytes),
+                            privateKeyBytes: Array.from(meshcorePrivateKey)
+                        };
+                    }
+                    
+                    self.onmessage = async function(e) {
+                        const { type, batchSize, targetPrefix } = e.data;
+                        
+                        if (type === 'generate') {
+                            const results = [];
+                            for (let i = 0; i < batchSize; i++) {
+                                const keypair = await generateKeypair();
+                                const matches = keypair.publicKey.startsWith(targetPrefix.toUpperCase());
+                                results.push({ ...keypair, matches });
+                            }
+                            self.postMessage({ type: 'results', results });
+                        }
+                    };
+                `;
+                
+                const blob = new Blob([workerScript], { type: 'application/javascript' });
+                const workerUrl = URL.createObjectURL(blob);
+                
+                // Create workers
+                for (let i = 0; i < this.numWorkers; i++) {
+                    const worker = new Worker(workerUrl);
+                    this.workers.push(worker);
+                }
+                
+                console.log(`✓ Initialized ${this.numWorkers} Web Workers for parallel key generation`);
+            }
+
+            async cleanupWorkers() {
+                for (const worker of this.workers) {
+                    worker.terminate();
+                }
+                this.workers = [];
             }
 
             // Generate a MeshCore-compatible Ed25519 keypair using RFC 8032 standard
@@ -901,12 +1040,64 @@
             
 
 
+            // Generate a batch of keypairs in parallel using Web Workers
+            async generateKeypairBatch(targetPrefix) {
+                if (this.workers.length === 0) {
+                    // Fallback to single-threaded if workers not available
+                    return await this.generateKeypairBatchSingle();
+                }
+                
+                // Distribute work across all workers
+                const keysPerWorker = Math.ceil(this.batchSize / this.workers.length);
+                const promises = this.workers.map(worker => {
+                    return new Promise((resolve) => {
+                        const handler = (e) => {
+                            if (e.data.type === 'results') {
+                                worker.removeEventListener('message', handler);
+                                resolve(e.data.results);
+                            }
+                        };
+                        worker.addEventListener('message', handler);
+                        worker.postMessage({
+                            type: 'generate',
+                            batchSize: keysPerWorker,
+                            targetPrefix: targetPrefix
+                        });
+                    });
+                });
+                
+                const allResults = await Promise.all(promises);
+                // Flatten results from all workers
+                return allResults.flat().map(result => ({
+                    publicKey: new Uint8Array(result.publicKeyBytes),
+                    privateKey: new Uint8Array(result.privateKeyBytes),
+                    publicKeyHex: result.publicKey,
+                    matches: result.matches
+                }));
+            }
+
+            // Single-threaded fallback
+            async generateKeypairBatchSingle() {
+                const promises = [];
+                for (let i = 0; i < this.batchSize; i++) {
+                    promises.push(this.generateMeshCoreKeypair());
+                }
+                const keypairs = await Promise.all(promises);
+                // Return in same format as worker version
+                return keypairs.map(kp => ({
+                    ...kp,
+                    publicKeyHex: this.toHex(kp.publicKey),
+                    matches: undefined // Will be checked in main loop
+                }));
+            }
+
             // Generate keys until we find a match
             async generateVanityKey(targetPrefix, prefixLength) {
                 this.isRunning = true;
                 this.attempts = 0;
                 this.startTime = Date.now();
                 this.lastUpdateTime = this.startTime;
+                this.currentTargetPrefix = targetPrefix; // Store for difficulty estimate updates
 
                 const updateProgress = () => {
                     if (!this.isRunning) return;
@@ -921,7 +1112,8 @@
 
                     // Update progress text
                     const progressText = document.getElementById('progressText');
-                    progressText.textContent = `${this.attempts.toLocaleString()} attempts | ${Math.round(rate).toLocaleString()} keys/sec | ${elapsed.toFixed(1)}s elapsed`;
+                    const method = this.workers.length > 0 ? `${this.workers.length} workers` : 'single-threaded';
+                    progressText.textContent = `${this.attempts.toLocaleString()} attempts | ${Math.round(rate).toLocaleString()} keys/sec | ${elapsed.toFixed(1)}s elapsed [${method}]`;
 
                     // Estimate progress based on probability
                     const probability = 1 / Math.pow(16, prefixLength);
@@ -933,59 +1125,85 @@
 
                 // Update progress every 100ms
                 this.updateInterval = setInterval(updateProgress, 100);
+                
+                // Update difficulty estimate every 10 seconds with current rate
+                let lastDifficultyUpdate = 0;
+                this.difficultyUpdateInterval = setInterval(() => {
+                    if (!this.isRunning) return;
+                    const elapsed = (Date.now() - this.startTime) / 1000;
+                    // Update every 10 seconds, starting after first 10 seconds
+                    if (elapsed - lastDifficultyUpdate >= 10 && elapsed >= 10) {
+                        const rate = this.attempts / elapsed;
+                        updateDifficultyEstimate(this.currentTargetPrefix, rate);
+                        lastDifficultyUpdate = elapsed;
+                    }
+                }, 10000); // Check every 10 seconds
 
                 try {
                     while (this.isRunning) {
-                        this.attempts++;
-
-                        // Generate a keypair
-                        const { publicKey, privateKey } = await this.generateMeshCoreKeypair();
-                        const publicKeyHex = this.toHex(publicKey);
+                        // Generate a batch of keypairs using workers
+                        const keypairs = await this.generateKeypairBatch(targetPrefix);
                         
-                        // Debug: Log first few keys to verify generation
-                        if (this.attempts <= 5) {
-                            console.log(`Key ${this.attempts}: ${publicKeyHex}`);
-                            console.log(`Target prefix: ${targetPrefix}`);
-                            console.log(`First ${targetPrefix.length} chars: ${publicKeyHex.substring(0, targetPrefix.length)}`);
-                            console.log(`Match: ${this.checkPrefix(publicKeyHex, targetPrefix)}`);
-                        }
-
-                        // Check if it matches our target prefix
-                        if (this.checkPrefix(publicKeyHex, targetPrefix)) {
-                            console.log(`Found matching key: ${publicKeyHex} matches ${targetPrefix}`);
-                            // Validate the generated keypair
-                            const privateKeyHex = this.toHex(privateKey);
-                            const validation = await this.validateKeypair(privateKeyHex, publicKeyHex);
+                        // Process results from the batch
+                        for (const keypair of keypairs) {
+                            if (!this.isRunning) break;
                             
-                            if (validation.valid) {
-                                this.isRunning = false;
-                                clearInterval(this.updateInterval);
+                            this.attempts++;
+                            
+                            // Use pre-computed hex if available, otherwise compute it
+                            const publicKeyHex = keypair.publicKeyHex || this.toHex(keypair.publicKey);
+                            
+                            // Debug: Log first few keys to verify generation
+                            if (this.attempts <= 5) {
+                                console.log(`Key ${this.attempts}: ${publicKeyHex}`);
+                                console.log(`Target prefix: ${targetPrefix}`);
+                                console.log(`First ${targetPrefix.length} chars: ${publicKeyHex.substring(0, targetPrefix.length)}`);
+                                console.log(`Match: ${keypair.matches || this.checkPrefix(publicKeyHex, targetPrefix)}`);
+                            }
 
-                                // Final progress update
-                                updateProgress();
+                            // Check if it matches our target prefix (use pre-computed match if available)
+                            const matches = keypair.matches !== undefined ? keypair.matches : this.checkPrefix(publicKeyHex, targetPrefix);
+                            
+                            if (matches) {
+                                console.log(`Found matching key: ${publicKeyHex} matches ${targetPrefix}`);
+                                // Validate the generated keypair
+                                const privateKeyHex = this.toHex(keypair.privateKey);
+                                const validation = await this.validateKeypair(privateKeyHex, publicKeyHex);
+                                
+                                if (validation.valid) {
+                                    this.isRunning = false;
+                                    clearInterval(this.updateInterval);
+                                    if (this.difficultyUpdateInterval) {
+                                        clearInterval(this.difficultyUpdateInterval);
+                                    }
 
-                                return {
-                                    publicKey: publicKeyHex,
-                                    privateKey: privateKeyHex,
-                                    attempts: this.attempts,
-                                    timeElapsed: (Date.now() - this.startTime) / 1000,
-                                    validation: validation
-                                };
-                            } else {
-                                // If validation fails, continue searching
-                                console.warn(`Key validation failed: ${validation.error}, continuing search...`);
-                                continue;
+                                    // Final progress update
+                                    updateProgress();
+
+                                    return {
+                                        publicKey: publicKeyHex,
+                                        privateKey: privateKeyHex,
+                                        attempts: this.attempts,
+                                        timeElapsed: (Date.now() - this.startTime) / 1000,
+                                        validation: validation
+                                    };
+                                } else {
+                                    // If validation fails, continue searching
+                                    console.warn(`Key validation failed: ${validation.error}, continuing search...`);
+                                    continue;
+                                }
                             }
                         }
 
                         // Yield control to prevent blocking the UI
-                        if (this.attempts % 1000 === 0) {
-                            await new Promise(resolve => setTimeout(resolve, 0));
-                        }
+                        await new Promise(resolve => setTimeout(resolve, 0));
                     }
                 } catch (error) {
                     this.isRunning = false;
                     clearInterval(this.updateInterval);
+                    if (this.difficultyUpdateInterval) {
+                        clearInterval(this.difficultyUpdateInterval);
+                    }
                     throw error;
                 }
 
@@ -997,6 +1215,10 @@
                 if (this.updateInterval) {
                     clearInterval(this.updateInterval);
                 }
+                if (this.difficultyUpdateInterval) {
+                    clearInterval(this.difficultyUpdateInterval);
+                }
+                // Workers will continue running for reuse, no need to terminate
             }
         }
 
@@ -1017,7 +1239,7 @@
         const closeModal = document.getElementById('closeModal');
 
         // Calculate and display difficulty estimate
-        function updateDifficultyEstimate(prefix) {
+        function updateDifficultyEstimate(prefix, currentRate = null) {
             const prefixInfo = document.getElementById('prefixInfo');
             const prefixDifficulty = document.getElementById('prefixDifficulty');
             
@@ -1044,8 +1266,8 @@
                 attemptsText = Math.round(expectedAttempts).toLocaleString();
             }
             
-            // Calculate estimated time (assuming 10,000 keys/sec as a realistic estimate for modern hardware)
-            const estimatedKeysPerSecond = 10000;
+            // Calculate estimated time (use current rate if provided, otherwise default to 10k keys/sec)
+            const estimatedKeysPerSecond = currentRate || 10000;
             const estimatedSeconds = expectedAttempts / estimatedKeysPerSecond;
             
             let timeText;
@@ -1061,6 +1283,19 @@
                 timeText = `${(estimatedSeconds / 60).toFixed(1)} minutes`;
             } else {
                 timeText = `${Math.round(estimatedSeconds)} seconds`;
+            }
+            
+            // Format the rate for display
+            let rateText;
+            if (currentRate) {
+                if (currentRate >= 1000) {
+                    rateText = `${(currentRate / 1000).toFixed(0)}k`;
+                } else {
+                    rateText = Math.round(currentRate).toLocaleString();
+                }
+                rateText += ' keys/sec';
+            } else {
+                rateText = '10k keys/sec';
             }
             
             // Determine difficulty level
@@ -1091,7 +1326,7 @@
                     Expected to find in ~${attemptsText} attempts
                 </div>
                 <div style="font-size: 13px; color: #7f8c8d;">
-                    Estimated time: ~${timeText} (at 10k keys/sec)
+                    Estimated time: ~${timeText} (at ${rateText})
                 </div>
                 <div style="font-size: 13px; color: #7f8c8d;">
                     Probability: 1 in ${expectedAttempts.toLocaleString()} (${(probability * 100).toFixed(6)}%)
@@ -1207,6 +1442,11 @@
                 // Initialize the key generator (loads the Ed25519 library)
                 document.getElementById('progressText').textContent = 'Loading Ed25519 library...';
                 await keyGenerator.initialize();
+                
+                // Update progress text with parallelization method
+                if (keyGenerator.workers.length > 0) {
+                    document.getElementById('progressText').textContent = `Initialized ${keyGenerator.workers.length} workers for parallel generation...`;
+                }
                 
                 const result = await keyGenerator.generateVanityKey(targetPrefix, targetPrefix.length);
                 
