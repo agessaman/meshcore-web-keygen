@@ -1152,6 +1152,12 @@
                             
                             // Use pre-computed hex if available, otherwise compute it
                             const publicKeyHex = keypair.publicKeyHex || this.toHex(keypair.publicKey);
+
+                            // Check if keypair contains reserved '00' or 'FF' prefix
+                            const keyPrefix = publicKeyHex.substring(0, 2).toUpperCase();
+                            if (keyPrefix === 'FF' || keyPrefix === '00') {
+                                continue;
+                            }
                             
                             // Debug: Log first few keys to verify generation
                             if (this.attempts <= 5) {
