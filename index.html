@@ -638,43 +638,61 @@
 
             async initialize() {
                 if (!this.initialized) {
+                    let libraryUrl = null;
                     try {
-                        // Use unpkg.com for the latest version (recommended) - ES module format
-                        nobleEd25519 = await import('https://unpkg.com/noble-ed25519@latest/esm/index.js');
+                        // Use unpkg.com for the latest version (recommended)
+                        libraryUrl = 'https://unpkg.com/noble-ed25519@latest';
+                        nobleEd25519 = await import(libraryUrl);
                         this.initialized = true;
                         console.log('✓ noble-ed25519 library loaded successfully from unpkg.com');
                         console.log('Available functions:', Object.keys(nobleEd25519));
                     } catch (error) {
-                        console.error('Failed to load from unpkg.com, trying jsDelivr:', error);
+                        console.warn('Failed to load from unpkg.com, trying jsDelivr:', error.message);
                         try {
-                            // Fallback to jsDelivr - ES module format
-                            nobleEd25519 = await import('https://cdn.jsdelivr.net/npm/noble-ed25519@latest/esm/index.js');
+                            // Fallback to jsDelivr
+                            libraryUrl = 'https://cdn.jsdelivr.net/npm/noble-ed25519@latest';
+                            nobleEd25519 = await import(libraryUrl);
                             this.initialized = true;
                             console.log('✓ noble-ed25519 library loaded successfully from jsDelivr');
                             console.log('Available functions:', Object.keys(nobleEd25519));
                         } catch (fallbackError) {
-                            console.error('Failed to load from jsDelivr, trying Skypack:', fallbackError);
+                            console.warn('Failed to load from jsDelivr, trying esm.sh:', fallbackError.message);
                             try {
-                                // Fallback to Skypack
-                                nobleEd25519 = await import('https://cdn.skypack.dev/noble-ed25519');
+                                // Fallback to esm.sh (alternative CDN)
+                                libraryUrl = 'https://esm.sh/noble-ed25519@latest';
+                                nobleEd25519 = await import(libraryUrl);
                                 this.initialized = true;
-                                console.log('✓ noble-ed25519 library loaded successfully from Skypack');
+                                console.log('✓ noble-ed25519 library loaded successfully from esm.sh');
                                 console.log('Available functions:', Object.keys(nobleEd25519));
-                            } catch (skypackError) {
-                                console.error('Failed to load from Skypack, trying offline fallback:', skypackError);
+                            } catch (esmError) {
+                                console.warn('Failed to load from esm.sh, trying Skypack:', esmError.message);
                                 try {
-                                    // Final fallback: offline version
-                                    nobleEd25519 = await import('./noble-ed25519-offline-simple.js');
+                                    // Fallback to Skypack
+                                    libraryUrl = 'https://cdn.skypack.dev/noble-ed25519';
+                                    nobleEd25519 = await import(libraryUrl);
                                     this.initialized = true;
-                                    console.log('✓ noble-ed25519 library loaded successfully (offline fallback)');
+                                    console.log('✓ noble-ed25519 library loaded successfully from Skypack');
                                     console.log('Available functions:', Object.keys(nobleEd25519));
-                                } catch (offlineError) {
-                                    console.error('Failed to load noble-ed25519 library from all sources:', offlineError);
-                                    throw new Error('Failed to load Ed25519 library. Please check your internet connection and ensure noble-ed25519-offline.js is available.');
+                                } catch (skypackError) {
+                                    console.warn('Failed to load from Skypack, trying offline fallback:', skypackError.message);
+                                    try {
+                                        // Final fallback: offline version
+                                        libraryUrl = './noble-ed25519-offline-simple.js';
+                                        nobleEd25519 = await import(libraryUrl);
+                                        this.initialized = true;
+                                        console.log('✓ noble-ed25519 library loaded successfully (offline fallback)');
+                                        console.log('Available functions:', Object.keys(nobleEd25519));
+                                    } catch (offlineError) {
+                                        console.error('Failed to load noble-ed25519 library from all sources:', offlineError);
+                                        throw new Error('Failed to load Ed25519 library. Please check your internet connection and ensure noble-ed25519-offline-simple.js is available.');
+                                    }
                                 }
                             }
                         }
                     }
+                    
+                    // Store the library URL for workers to use (they'll import from the same URL)
+                    this.libraryUrl = libraryUrl;
                     
                     // Initialize Web Workers for parallel CPU processing
                     await this.initializeWorkers();
@@ -684,25 +702,27 @@
             async initializeWorkers() {
                 if (this.workers.length > 0) return; // Already initialized
                 
+                // Use the same library URL that worked in the main thread
+                // This avoids redundant network requests - workers will use the same CDN
+                let libraryUrl = this.libraryUrl || 'https://unpkg.com/noble-ed25519@latest';
+                
+                // Convert relative URLs to absolute URLs for workers
+                // Workers can't use relative imports from blob URLs
+                if (libraryUrl.startsWith('./') || libraryUrl.startsWith('../')) {
+                    // Convert relative path to absolute URL
+                    libraryUrl = new URL(libraryUrl, window.location.href).href;
+                }
+                
                 // Create worker script
                 const workerScript = `
                     let nobleEd25519 = null;
                     
                     async function loadLibrary() {
                         if (nobleEd25519) return;
-                        try {
-                            nobleEd25519 = await import('https://unpkg.com/noble-ed25519@latest/esm/index.js');
-                        } catch (e) {
-                            try {
-                                nobleEd25519 = await import('https://cdn.jsdelivr.net/npm/noble-ed25519@latest/esm/index.js');
-                            } catch (e2) {
-                                try {
-                                    nobleEd25519 = await import('https://cdn.skypack.dev/noble-ed25519');
-                                } catch (e3) {
-                                    throw new Error('Failed to load Ed25519 library');
-                                }
-                            }
-                        }
+                        // Use the same library URL that worked in the main thread
+                        // This is injected at worker creation time to avoid redundant fetches
+                        const libraryUrl = ${JSON.stringify(libraryUrl)};
+                        nobleEd25519 = await import(libraryUrl);
                     }
                     
                     async function generateKeypair() {
@@ -1050,14 +1070,31 @@
                 // Distribute work across all workers
                 const keysPerWorker = Math.ceil(this.batchSize / this.workers.length);
                 const promises = this.workers.map(worker => {
-                    return new Promise((resolve) => {
+                    return new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            worker.removeEventListener('message', handler);
+                            worker.removeEventListener('error', errorHandler);
+                            reject(new Error('Worker timeout'));
+                        }, 30000); // 30 second timeout
+                        
                         const handler = (e) => {
                             if (e.data.type === 'results') {
+                                clearTimeout(timeout);
                                 worker.removeEventListener('message', handler);
+                                worker.removeEventListener('error', errorHandler);
                                 resolve(e.data.results);
                             }
                         };
+                        
+                        const errorHandler = (error) => {
+                            clearTimeout(timeout);
+                            worker.removeEventListener('message', handler);
+                            worker.removeEventListener('error', errorHandler);
+                            reject(error);
+                        };
+                        
                         worker.addEventListener('message', handler);
+                        worker.addEventListener('error', errorHandler);
                         worker.postMessage({
                             type: 'generate',
                             batchSize: keysPerWorker,
@@ -1066,9 +1103,24 @@
                     });
                 });
                 
-                const allResults = await Promise.all(promises);
-                // Flatten results from all workers
-                return allResults.flat().map(result => ({
+                const allResults = await Promise.allSettled(promises);
+                // Flatten results from successful workers, log failures
+                const successfulResults = [];
+                for (let i = 0; i < allResults.length; i++) {
+                    if (allResults[i].status === 'fulfilled') {
+                        successfulResults.push(...allResults[i].value);
+                    } else {
+                        console.warn(`Worker ${i} failed:`, allResults[i].reason);
+                    }
+                }
+                
+                // If all workers failed, fall back to single-threaded
+                if (successfulResults.length === 0) {
+                    console.warn('All workers failed, falling back to single-threaded mode');
+                    return await this.generateKeypairBatchSingle();
+                }
+                
+                return successfulResults.map(result => ({
                     publicKey: new Uint8Array(result.publicKeyBytes),
                     privateKey: new Uint8Array(result.privateKeyBytes),
                     publicKeyHex: result.publicKey,
