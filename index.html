@@ -633,9 +633,7 @@
                 this.initialized = false;
                 this.workers = [];
                 this.numWorkers = navigator.hardwareConcurrency || 4;
-                this.batchSize = Math.max(128, (navigator.hardwareConcurrency || 4) * 32);
-                this.gpuKeygen = null;
-                this.gpuAvailable = false;
+                this.batchSize = 2048; // WASM is fast enough for large batches per worker
             }
 
             async initialize() {
@@ -696,265 +694,19 @@
                     // Store the library URL for workers to use (they'll import from the same URL)
                     this.libraryUrl = libraryUrl;
 
-                    // Initialize Web Workers for parallel CPU processing
+                    // Initialize Web Workers with WASM acceleration
                     await this.initializeWorkers();
-
-                    // Try to initialize WebGPU for additional acceleration
-                    await this.initializeGPU();
-                }
-            }
-
-            async initializeGPU() {
-                try {
-                    if (!navigator.gpu) {
-                        console.log('WebGPU not available in this browser');
-                        return;
-                    }
-                    const { GPUKeyGenerator } = await import('./webgpu/gpu-keygen.js');
-                    const gpuAvail = await GPUKeyGenerator.isAvailable();
-                    if (!gpuAvail) {
-                        console.log('No WebGPU adapter found');
-                        return;
-                    }
-                    this.gpuKeygen = new GPUKeyGenerator();
-                    await this.gpuKeygen.initialize();
-
-                    // Validate GPU shader correctness before enabling
-                    const validated = await this.validateGPUCorrectness();
-                    if (validated) {
-                        this.gpuAvailable = true;
-                        console.log('✓ WebGPU acceleration enabled (shader validated)');
-                    } else {
-                        console.warn('⚠ WebGPU disabled: shader produced incorrect keys');
-                        this.gpuKeygen.destroy();
-                        this.gpuKeygen = null;
-                        this.gpuAvailable = false;
-                    }
-                } catch (e) {
-                    console.warn('WebGPU initialization failed:', e.message);
-                    this.gpuKeygen = null;
-                    this.gpuAvailable = false;
-                }
-            }
-
-            // Validate GPU shader by comparing GPU-produced public keys against CPU reference
-            // Dispatches a test batch, then verifies each GPU match on the CPU
-            async validateGPUCorrectness() {
-                try {
-                    console.log('Validating WebGPU shader correctness...');
-
-                    // Step 1: Dispatch with empty prefix (nibbles=0 → matches ALL keys)
-                    // This tests if the shader runs at all, regardless of prefix matching
-                    let result = await this.gpuKeygen.dispatchBatch('');
-                    console.log(`GPU diagnostic: empty-prefix dispatch returned ${result.matches.length} matches from ${result.attempted} threads`);
-
-                    if (result.matches.length === 0) {
-                        // Shader produces no matches even when matching everything
-                        // This means the crypto pipeline is completely broken or shader is timing out
-                        console.error('GPU validation FAILED: zero matches with empty prefix (should match ALL keys)');
-                        console.error('Possible causes: shader timeout, broken crypto pipeline, or all keys hit reserved check');
-                        // Try a smaller dispatch to check if it's a timeout issue
-                        const origWorkgroups = this.gpuKeygen.numWorkgroups;
-                        this.gpuKeygen.numWorkgroups = 4; // Only 256 threads
-                        this.gpuKeygen.threadsPerDispatch = 64 * 4;
-                        const smallResult = await this.gpuKeygen.dispatchBatch('');
-                        console.log(`GPU diagnostic: small dispatch (${this.gpuKeygen.threadsPerDispatch} threads) returned ${smallResult.matches.length} matches`);
-                        this.gpuKeygen.numWorkgroups = origWorkgroups;
-                        this.gpuKeygen.threadsPerDispatch = 64 * origWorkgroups;
-
-                        if (smallResult.matches.length === 0) {
-                            console.error('GPU validation FAILED: even small dispatch produced zero matches');
-                            return false;
-                        }
-                        result = smallResult;
-                    }
-
-                    // Step 2: If we got matches with empty prefix, try with a 1-nibble prefix
-                    if (result.matches.length > 0) {
-                        const prefixResult = await this.gpuKeygen.dispatchBatch('A');
-                        console.log(`GPU diagnostic: prefix 'A' dispatch returned ${prefixResult.matches.length} matches`);
-                        if (prefixResult.matches.length > 0) {
-                            result = prefixResult; // Use prefix matches for validation
-                        }
-                    }
-
-                    // Verify up to 10 matches against CPU-derived reference
-                    const samplesToCheck = Math.min(result.matches.length, 10);
-                    let passCount = 0;
-
-                    for (let i = 0; i < samplesToCheck; i++) {
-                        const match = result.matches[i];
-                        const seed = match.seed;      // Uint8Array(32)
-                        const gpuPubkey = match.pubkey; // Uint8Array(32)
-
-                        // CPU reference: SHA-512(seed) → clamp → Point.BASE.multiply → compress
-                        const digest = await crypto.subtle.digest('SHA-512', seed);
-                        const digestArray = new Uint8Array(digest);
-                        const clamped = new Uint8Array(digestArray.slice(0, 32));
-                        clamped[0] &= 248;
-                        clamped[31] &= 127;
-                        clamped[31] |= 64;
-
-                        let scalarBigInt = 0n;
-                        for (let j = 0; j < 32; j++) {
-                            scalarBigInt += BigInt(clamped[j]) << BigInt(8 * j);
-                        }
-
-                        let cpuPubkeyBytes;
-                        try {
-                            const point = nobleEd25519.Point.BASE.multiply(scalarBigInt);
-                            if (point.toRawBytes) cpuPubkeyBytes = point.toRawBytes();
-                            else if (point.toBytes) cpuPubkeyBytes = point.toBytes();
-                            else {
-                                cpuPubkeyBytes = new Uint8Array(32);
-                                for (let j = 0; j < 32; j++) cpuPubkeyBytes[j] = Number((point.y >> BigInt(8 * j)) & 255n);
-                                cpuPubkeyBytes[31] = (cpuPubkeyBytes[31] & 0x7F) | Number((point.x & 1n) << 7);
-                            }
-                        } catch {
-                            cpuPubkeyBytes = await nobleEd25519.getPublicKey(clamped);
-                        }
-
-                        // Compare GPU vs CPU public keys
-                        const toHex = (b) => Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
-                        let match_ok = true;
-                        for (let j = 0; j < 32; j++) {
-                            if (gpuPubkey[j] !== cpuPubkeyBytes[j]) {
-                                match_ok = false;
-                                break;
-                            }
-                        }
-
-                        if (match_ok) {
-                            passCount++;
-                        } else {
-                            console.error(`GPU validation FAILED sample ${i}:`);
-                            console.error(`  GPU pubkey: ${toHex(gpuPubkey)}`);
-                            console.error(`  CPU pubkey: ${toHex(cpuPubkeyBytes)}`);
-                            console.error(`  Seed:       ${toHex(seed)}`);
-                        }
-                    }
-
-                    if (passCount === samplesToCheck) {
-                        console.log(`✓ GPU validation passed: ${passCount}/${result.matches.length} matches verified against CPU`);
-                        return true;
-                    } else {
-                        console.error(`✗ GPU validation failed: ${passCount}/${samplesToCheck} samples matched CPU reference`);
-                        return false;
-                    }
-                } catch (e) {
-                    console.error('GPU validation error:', e);
-                    return false;
                 }
             }
 
             async initializeWorkers() {
                 if (this.workers.length > 0) return; // Already initialized
 
-                // Optimized blob workers using noble-ed25519
-                // Key optimizations vs naive approach:
-                // - Only returns MATCHING keys (not all keys) — reduces postMessage overhead
-                // - Byte-level prefix comparison (avoids hex conversion for non-matches)
-                // - Returns attempted count for accurate progress tracking
-                let libraryUrl = this.libraryUrl || 'https://unpkg.com/noble-ed25519@latest';
-                if (libraryUrl.startsWith('./') || libraryUrl.startsWith('../')) {
-                    libraryUrl = new URL(libraryUrl, window.location.href).href;
-                }
-                const workerScript = `
-                    let nobleEd25519 = null;
-                    async function loadLibrary() {
-                        if (nobleEd25519) return;
-                        const libraryUrl = ${JSON.stringify(libraryUrl)};
-                        nobleEd25519 = await import(libraryUrl);
-                    }
-
-                    // Derive Ed25519 public key from clamped scalar
-                    function derivePublicKey(clamped) {
-                        let scalarBigInt = 0n;
-                        for (let i = 0; i < 32; i++) scalarBigInt += BigInt(clamped[i]) << BigInt(8 * i);
-                        let publicKey;
-                        try { publicKey = nobleEd25519.Point.BASE.multiply(scalarBigInt); }
-                        catch (error) {
-                            try { publicKey = nobleEd25519.getPublicKey(clamped); }
-                            catch (fallbackError) { publicKey = nobleEd25519.getPublicKey(clamped); }
-                        }
-                        if (publicKey instanceof Uint8Array) return publicKey;
-                        if (publicKey.toRawBytes) return publicKey.toRawBytes();
-                        if (publicKey.toBytes) return publicKey.toBytes();
-                        if (publicKey.x !== undefined && publicKey.y !== undefined) {
-                            const result = new Uint8Array(32);
-                            for (let j = 0; j < 32; j++) result[j] = Number((publicKey.y >> BigInt(8 * j)) & 255n);
-                            result[31] = (result[31] & 0x7F) | Number((publicKey.x & 1n) << 7);
-                            return result;
-                        }
-                        throw new Error('Unsupported public key format');
-                    }
-
-                    const toHex = (bytes) => Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-
-                    self.onmessage = async function(e) {
-                        const { type, batchSize, targetPrefix } = e.data;
-                        if (type === 'generate') {
-                            await loadLibrary();
-
-                            // Parse target prefix into bytes for fast comparison
-                            const prefix = targetPrefix.toUpperCase();
-                            const targetNibbles = prefix.length;
-                            const targetByteLen = (targetNibbles + 1) >>> 1;
-                            const targetBytes = new Uint8Array(targetByteLen);
-                            for (let i = 0; i < targetNibbles; i++) {
-                                const nibble = parseInt(prefix[i], 16);
-                                if (i & 1) targetBytes[i >>> 1] |= nibble;
-                                else targetBytes[i >>> 1] = nibble << 4;
-                            }
-
-                            const results = [];
-                            for (let k = 0; k < batchSize; k++) {
-                                const seed = crypto.getRandomValues(new Uint8Array(32));
-                                const digest = await crypto.subtle.digest('SHA-512', seed);
-                                const digestArray = new Uint8Array(digest);
-                                const clamped = new Uint8Array(digestArray.slice(0, 32));
-                                clamped[0] &= 248; clamped[31] &= 63; clamped[31] |= 64;
-
-                                const pubBytes = derivePublicKey(clamped);
-
-                                // Skip reserved prefixes
-                                if (pubBytes[0] === 0x00 || pubBytes[0] === 0xFF) continue;
-
-                                // Byte-level prefix match (no hex conversion for non-matches)
-                                let match = true;
-                                const fullBytes = targetNibbles >>> 1;
-                                for (let i = 0; i < fullBytes; i++) {
-                                    if (pubBytes[i] !== targetBytes[i]) { match = false; break; }
-                                }
-                                if (match && (targetNibbles & 1)) {
-                                    if ((pubBytes[fullBytes] & 0xF0) !== (targetBytes[fullBytes] & 0xF0)) match = false;
-                                }
-
-                                if (match) {
-                                    // Only serialize matching keys
-                                    const meshcorePrivateKey = new Uint8Array(64);
-                                    meshcorePrivateKey.set(clamped, 0);
-                                    meshcorePrivateKey.set(digestArray.slice(32, 64), 32);
-                                    results.push({
-                                        publicKey: toHex(pubBytes),
-                                        privateKey: toHex(meshcorePrivateKey),
-                                        publicKeyBytes: Array.from(pubBytes),
-                                        privateKeyBytes: Array.from(meshcorePrivateKey),
-                                        matches: true
-                                    });
-                                }
-                            }
-                            self.postMessage({ type: 'results', results, attempted: batchSize });
-                        }
-                    };
-                `;
-                const blob = new Blob([workerScript], { type: 'application/javascript' });
-                const blobUrl = URL.createObjectURL(blob);
-                this.useFastWorkers = true; // All workers now use optimized batch loop
                 for (let i = 0; i < this.numWorkers; i++) {
-                    this.workers.push(new Worker(blobUrl));
+                    this.workers.push(new Worker('./wasm/worker.js', { type: 'module' }));
                 }
-                console.log(`✓ Initialized ${this.numWorkers} optimized Web Workers for parallel key generation`);
+                this.useFastWorkers = true;
+                console.log(`✓ Initialized ${this.numWorkers} WASM-accelerated Web Workers`);
             }
 
             async cleanupWorkers() {
@@ -1284,69 +1036,6 @@
                 }));
             }
 
-            // Dispatch a GPU batch and convert results to the same format as CPU batches
-            // GPU matches need CPU-side re-derivation since the GPU returns seeds, not full keypairs
-            async dispatchGPUBatch(targetPrefix) {
-                try {
-                    const result = await this.gpuKeygen.dispatchBatch(targetPrefix);
-                    const keypairs = [];
-
-                    for (const match of result.matches) {
-                        // GPU returns the seed; re-derive keypair on CPU for validation
-                        // This is cheap since it's only done for the rare matches
-                        const seed = match.seed;
-                        const digest = await crypto.subtle.digest('SHA-512', seed);
-                        const digestArray = new Uint8Array(digest);
-                        const clamped = new Uint8Array(digestArray.slice(0, 32));
-                        clamped[0] &= 248;
-                        clamped[31] &= 127;
-                        clamped[31] |= 64;
-
-                        // Derive public key using noble-ed25519
-                        let scalarBigInt = 0n;
-                        for (let i = 0; i < 32; i++) {
-                            scalarBigInt += BigInt(clamped[i]) << BigInt(8 * i);
-                        }
-                        let publicKey;
-                        try {
-                            publicKey = nobleEd25519.Point.BASE.multiply(scalarBigInt);
-                        } catch {
-                            publicKey = await nobleEd25519.getPublicKey(clamped);
-                        }
-
-                        let publicKeyBytes;
-                        if (publicKey instanceof Uint8Array) {
-                            publicKeyBytes = publicKey;
-                        } else if (publicKey.toRawBytes) {
-                            publicKeyBytes = publicKey.toRawBytes();
-                        } else if (publicKey.toBytes) {
-                            publicKeyBytes = publicKey.toBytes();
-                        } else {
-                            publicKeyBytes = new Uint8Array(32);
-                            for (let j = 0; j < 32; j++) publicKeyBytes[j] = Number((publicKey.y >> BigInt(8 * j)) & 255n);
-                            publicKeyBytes[31] = (publicKeyBytes[31] & 0x7F) | Number((publicKey.x & 1n) << 7);
-                        }
-
-                        const meshcorePrivateKey = new Uint8Array(64);
-                        meshcorePrivateKey.set(clamped, 0);
-                        meshcorePrivateKey.set(digestArray.slice(32, 64), 32);
-
-                        keypairs.push({
-                            publicKey: publicKeyBytes,
-                            privateKey: meshcorePrivateKey,
-                            publicKeyHex: this.toHex(publicKeyBytes),
-                            privateKeyHex: this.toHex(meshcorePrivateKey),
-                            matches: true
-                        });
-                    }
-
-                    return { keypairs, attempted: result.attempted };
-                } catch (e) {
-                    console.warn('GPU batch failed:', e.message);
-                    return { keypairs: [], attempted: 0 };
-                }
-            }
-
             // Generate keys until we find a match
             async generateVanityKey(targetPrefix, prefixLength) {
                 this.isRunning = true;
@@ -1368,8 +1057,7 @@
 
                     // Update progress text
                     const progressText = document.getElementById('progressText');
-                    const gpuLabel = this.gpuAvailable ? ' + GPU' : '';
-                    const method = this.workers.length > 0 ? `${this.workers.length} workers${gpuLabel}` : 'single-threaded';
+                    const method = this.workers.length > 0 ? `${this.workers.length} WASM workers` : 'single-threaded';
                     progressText.textContent = `${this.attempts.toLocaleString()} attempts | ${Math.round(rate).toLocaleString()} keys/sec | ${elapsed.toFixed(1)}s elapsed [${method}]`;
 
                     // Estimate progress based on probability
@@ -1398,30 +1086,18 @@
 
                 try {
                     while (this.isRunning) {
-                        // Run CPU workers and GPU dispatch in parallel
-                        const cpuPromise = this.generateKeypairBatch(targetPrefix);
-                        const gpuPromise = this.gpuAvailable
-                            ? this.dispatchGPUBatch(targetPrefix)
-                            : Promise.resolve({ keypairs: [], attempted: 0 });
+                        const cpuBatch = await this.generateKeypairBatch(targetPrefix);
+                        this.attempts += cpuBatch.attempted;
+                        const allKeypairs = cpuBatch.keypairs;
 
-                        const [cpuBatch, gpuBatch] = await Promise.all([cpuPromise, gpuPromise]);
-
-                        // Aggregate results from both backends
-                        const allKeypairs = [...cpuBatch.keypairs, ...gpuBatch.keypairs];
-                        const totalAttempted = cpuBatch.attempted + gpuBatch.attempted;
-                        this.attempts += totalAttempted;
-
-                        // Process matching results
                         for (const keypair of allKeypairs) {
                             if (!this.isRunning) break;
 
                             const publicKeyHex = keypair.publicKeyHex || this.toHex(keypair.publicKey);
 
-                            // Skip reserved prefixes
                             const keyPrefix = publicKeyHex.substring(0, 2).toUpperCase();
                             if (keyPrefix === 'FF' || keyPrefix === '00') continue;
 
-                            // Verify prefix match
                             const matches = keypair.matches !== undefined ? keypair.matches : this.checkPrefix(publicKeyHex, targetPrefix);
 
                             if (matches) {
@@ -1700,9 +1376,8 @@
                 await keyGenerator.initialize();
                 
                 // Update progress text with parallelization method
-                const gpuLabel = keyGenerator.gpuAvailable ? ' + GPU' : '';
                 if (keyGenerator.workers.length > 0) {
-                    document.getElementById('progressText').textContent = `Initialized ${keyGenerator.workers.length} workers${gpuLabel} for parallel generation...`;
+                    document.getElementById('progressText').textContent = `Initialized ${keyGenerator.workers.length} WASM workers for parallel generation...`;
                 }
                 
                 const result = await keyGenerator.generateVanityKey(targetPrefix, targetPrefix.length);

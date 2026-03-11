@@ -25,6 +25,9 @@ build/
 *.min.js
 *.min.css
 
+# Rust/WASM build intermediates (keep wasm/pkg/ tracked for static serving)
+wasm/target/
+
 # Environment variables
 .env
 .env.local
