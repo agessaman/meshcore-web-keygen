@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebCrypto Ed25519 Performance Test</title>
+    <style>
+        body {
+            font-family: 'Monaco', 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+
+        h1 {
+            color: #4ec9b0;
+            border-bottom: 2px solid #4ec9b0;
+            padding-bottom: 10px;
+        }
+
+        .test-section {
+            background: #252526;
+            border: 1px solid #3e3e42;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .test-section.pending {
+            border-left: 4px solid #ce9178;
+        }
+
+        .test-section.success {
+            border-left: 4px solid #4ec9b0;
+        }
+
+        .test-section.error {
+            border-left: 4px solid #f48771;
+        }
+
+        .test-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #dcdcaa;
+            margin-bottom: 15px;
+        }
+
+        .test-result {
+            white-space: pre-wrap;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #cccccc;
+        }
+
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        button:hover:not(:disabled) {
+            background: #1177bb;
+        }
+
+        button:disabled {
+            background: #3e3e42;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 10px;
+            text-align: left;
+            border: 1px solid #3e3e42;
+        }
+
+        .comparison-table th {
+            background: #2d2d30;
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+
+        .comparison-table tr:nth-child(even) {
+            background: #2a2a2d;
+        }
+
+        .winner {
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+
+        .loser {
+            color: #f48771;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebCrypto Ed25519 Performance Test</h1>
+
+    <div class="test-section">
+        <div class="test-title">Test Strategy</div>
+        <div class="test-result">This test compares FOUR approaches for Ed25519 vanity key generation:
+
+1. WebGPU Implementation (GPU-accelerated)
+   - Custom WGSL shaders
+   - ~1,300 keys/sec (measured - poor performance)
+
+2. JavaScript: noble-ed25519 (CPU, single-threaded)
+   - Pure JavaScript
+   - Measured: ~26,000 keys/sec
+
+3. JavaScript: noble-ed25519 + Web Workers (CPU, multi-threaded)
+   - JavaScript on multiple CPU cores
+   - Measured: ~37,000 keys/sec (1.4x speedup)
+
+4. WebAssembly: libsodium.js (CPU, single-threaded)
+   - WASM-compiled C code
+   - Expected: ~60,000-80,000 keys/sec (2-3x faster than JS)
+
+5. WebAssembly: libsodium.js + Web Workers (CPU, multi-threaded)
+   - WASM on multiple CPU cores
+   - Expected: ~600,000-800,000 keys/sec (10 cores × 60-80K/sec)
+
+Target prefix: "CA" (2 hex characters)
+Batch size: 250,000 keys per test
+CPU cores: ${navigator.hardwareConcurrency || 'unknown'}
+</div>
+    </div>
+
+    <div id="browserSupport" class="test-section pending">
+        <div class="test-title">1. Browser Support Check</div>
+        <div class="test-result" id="browserSupportResult">Not started</div>
+    </div>
+
+    <div id="init" class="test-section pending">
+        <div class="test-title">2. Initialize WebCrypto Generator</div>
+        <div class="test-result" id="initResult">Not started</div>
+    </div>
+
+    <div id="validation" class="test-section pending">
+        <div class="test-title">3. RFC 8032 Validation</div>
+        <div class="test-result" id="validationResult">Not started</div>
+    </div>
+
+    <div id="benchmark1" class="test-section pending">
+        <div class="test-title">4. Single-Threaded Benchmark</div>
+        <div class="test-result" id="benchmark1Result">Not started</div>
+    </div>
+
+    <div id="benchmark2" class="test-section pending">
+        <div class="test-title">5. Multi-Threaded Benchmark (JS + Workers)</div>
+        <div class="test-result" id="benchmark2Result">Not started</div>
+    </div>
+
+    <div id="wasmInit" class="test-section pending">
+        <div class="test-title">6. Initialize WASM Generator</div>
+        <div class="test-result" id="wasmInitResult">Not started</div>
+    </div>
+
+    <div id="wasmBench1" class="test-section pending">
+        <div class="test-title">7. WASM Single-Threaded Benchmark</div>
+        <div class="test-result" id="wasmBench1Result">Not started</div>
+    </div>
+
+    <div id="wasmBench2" class="test-section pending">
+        <div class="test-title">8. WASM Multi-Threaded Benchmark</div>
+        <div class="test-result" id="wasmBench2Result">Not started</div>
+    </div>
+
+    <div id="comparison" class="test-section" style="display: none;">
+        <div class="test-title">Performance Comparison</div>
+        <div class="test-result" id="comparisonResult"></div>
+    </div>
+
+    <div style="margin-top: 30px;">
+        <button id="runTests" onclick="runAllTests()">Run All Tests</button>
+        <button id="runComparison" onclick="runComparison()" disabled>Compare All Methods</button>
+    </div>
+
+    <script type="module">
+        import { WebCryptoKeyGenerator } from './webcrypto-keygen.js';
+        import { WasmKeyGenerator } from './wasm-keygen.js';
+
+        let generator = null;
+        let wasmGenerator = null;
+        let results = {
+            singleThreaded: null,
+            multiThreaded: null,
+            wasmSingleThreaded: null,
+            wasmMultiThreaded: null,
+            webgpu: 1332 // From previous test
+        };
+
+        async function updateTestStatus(testId, status, message) {
+            const element = document.getElementById(testId);
+            const resultElement = document.getElementById(testId + 'Result');
+
+            element.className = 'test-section ' + status;
+            resultElement.textContent = message;
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        async function runTest1_BrowserSupport() {
+            await updateTestStatus('browserSupport', 'pending', 'Checking browser support...');
+
+            try {
+                let result = 'Browser capabilities:\n\n';
+
+                // Check Ed25519 support
+                try {
+                    await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+                    result += '✅ Native Ed25519 support: YES\n';
+                } catch (e) {
+                    result += '⚠️  Native Ed25519 support: NO (will use noble-ed25519 polyfill)\n';
+                }
+
+                // Check crypto.getRandomValues
+                result += '✅ crypto.getRandomValues: YES\n';
+
+                // Check Promise.all parallelism
+                result += '✅ Promise.all parallelism: YES\n';
+
+                // CPU cores
+                result += `✅ CPU cores available: ${navigator.hardwareConcurrency || 'unknown'}\n`;
+
+                await updateTestStatus('browserSupport', 'success', result);
+                return true;
+            } catch (error) {
+                await updateTestStatus('browserSupport', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest2_Initialize() {
+            await updateTestStatus('init', 'pending', 'Initializing WebCrypto generator...');
+
+            try {
+                generator = new WebCryptoKeyGenerator();
+                const success = await generator.initialize();
+
+                if (!success) {
+                    throw new Error('Failed to initialize generator');
+                }
+
+                let result = '✅ Generator initialized successfully!\n\n';
+                result += `Using ${generator.useNativeWebCrypto ? 'native Web Crypto Ed25519' : 'noble-ed25519 polyfill'}\n`;
+                result += `noble-ed25519 library loaded: ${generator.nobleEd25519 ? 'YES' : 'NO'}\n`;
+
+                await updateTestStatus('init', 'success', result);
+                return true;
+            } catch (error) {
+                await updateTestStatus('init', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest3_Validation() {
+            await updateTestStatus('validation', 'pending', 'Validating against RFC 8032 test vectors...');
+
+            try {
+                const RFC8032_TEST_VECTORS = [
+                    {
+                        name: "RFC 8032 Test 1",
+                        seed: "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+                        publicKey: "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+                    },
+                    {
+                        name: "RFC 8032 Test 2",
+                        seed: "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+                        publicKey: "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+                    },
+                    {
+                        name: "RFC 8032 Test 3",
+                        seed: "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+                        publicKey: "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+                    }
+                ];
+
+                let result = 'Testing against RFC 8032 vectors:\n\n';
+                let passed = 0;
+                let failed = 0;
+
+                for (const vector of RFC8032_TEST_VECTORS) {
+                    result += `${vector.name}:\n`;
+                    result += `Seed: ${vector.seed}\n`;
+
+                    // Convert seed from hex to Uint8Array
+                    const seed = new Uint8Array(32);
+                    for (let i = 0; i < 32; i++) {
+                        seed[i] = parseInt(vector.seed.substr(i * 2, 2), 16);
+                    }
+
+                    // Generate keypair
+                    const keypair = await generator.generateFromSeed(seed);
+
+                    result += `Generated: ${keypair.publicKey}\n`;
+                    result += `Expected:  ${vector.publicKey}\n`;
+
+                    if (keypair.publicKey === vector.publicKey) {
+                        result += `✅ MATCH\n\n`;
+                        passed++;
+                    } else {
+                        result += `❌ MISMATCH\n\n`;
+                        failed++;
+                    }
+                }
+
+                result += `\nSummary: ${passed} passed, ${failed} failed out of ${RFC8032_TEST_VECTORS.length} tests`;
+
+                if (failed === 0) {
+                    await updateTestStatus('validation', 'success', result);
+                } else {
+                    await updateTestStatus('validation', 'error', result);
+                }
+
+                return failed === 0;
+            } catch (error) {
+                await updateTestStatus('validation', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest4_SingleThreaded() {
+            await updateTestStatus('benchmark1', 'pending', 'Running single-threaded benchmark...');
+
+            try {
+                const batchSize = 50000;  // Increased for better measurement
+                const targetPrefix = 'CA';
+
+                const result = await generator.generateBatch(batchSize, targetPrefix);
+
+                results.singleThreaded = result.keysPerSecond;
+
+                let output = `✅ Single-threaded benchmark completed!\n\n`;
+                output += `Batch size: ${result.batchSize.toLocaleString()}\n`;
+                output += `Time: ${result.totalTime.toFixed(2)}ms\n`;
+                output += `Performance: ${result.keysPerSecond.toFixed(0).toLocaleString()} keys/sec\n`;
+                output += `Matches found: ${result.matchCount}\n\n`;
+
+                if (result.results.length > 0) {
+                    output += `Example match:\n`;
+                    output += `Public:  ${result.results[0].publicKey}\n`;
+                    output += `Private: ${result.results[0].privateKey}\n`;
+                }
+
+                await updateTestStatus('benchmark1', 'success', output);
+                return true;
+            } catch (error) {
+                await updateTestStatus('benchmark1', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest5_MultiThreaded() {
+            await updateTestStatus('benchmark2', 'pending', 'Running multi-threaded benchmark...');
+
+            try {
+                const batchSize = 50000;  // Increased for better measurement
+                const targetPrefix = 'CA';
+                const workerCount = navigator.hardwareConcurrency || 4;
+
+                const result = await generator.generateBatchParallel(batchSize, targetPrefix, workerCount);
+
+                results.multiThreaded = result.keysPerSecond;
+
+                let output = `✅ Multi-threaded benchmark completed!\n\n`;
+                output += `Batch size: ${result.batchSize.toLocaleString()}\n`;
+                output += `Worker count: ${workerCount}\n`;
+                output += `Time: ${result.totalTime.toFixed(2)}ms\n`;
+                output += `Performance: ${result.keysPerSecond.toFixed(0).toLocaleString()} keys/sec\n`;
+                output += `Speedup vs single-thread: ${(result.keysPerSecond / results.singleThreaded).toFixed(2)}x\n`;
+                output += `Matches found: ${result.matchCount}\n\n`;
+
+                if (result.results.length > 0) {
+                    output += `Example match:\n`;
+                    output += `Public:  ${result.results[0].publicKey}\n`;
+                    output += `Private: ${result.results[0].privateKey}\n`;
+                }
+
+                await updateTestStatus('benchmark2', 'success', output);
+                return true;
+            } catch (error) {
+                await updateTestStatus('benchmark2', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest6_WasmInit() {
+            await updateTestStatus('wasmInit', 'pending', 'Initializing WASM generator...');
+
+            try {
+                wasmGenerator = new WasmKeyGenerator();
+                const success = await wasmGenerator.initialize();
+
+                if (!success) {
+                    throw new Error('Failed to initialize WASM generator');
+                }
+
+                let output = '✅ WASM generator initialized successfully!\n\n';
+                output += `libsodium.js (WebAssembly) loaded\n`;
+
+                await updateTestStatus('wasmInit', 'success', output);
+                return true;
+            } catch (error) {
+                await updateTestStatus('wasmInit', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest7_WasmSingleThreaded() {
+            await updateTestStatus('wasmBench1', 'pending', 'Running WASM single-threaded benchmark...');
+
+            try {
+                const batchSize = 250000;
+                const targetPrefix = 'CA';
+
+                const result = await wasmGenerator.generateBatch(batchSize, targetPrefix);
+
+                results.wasmSingleThreaded = result.keysPerSecond;
+
+                let output = `✅ WASM single-threaded benchmark completed!\n\n`;
+                output += `Batch size: ${result.batchSize.toLocaleString()}\n`;
+                output += `Time: ${result.totalTime.toFixed(2)}ms\n`;
+                output += `Performance: ${result.keysPerSecond.toFixed(0).toLocaleString()} keys/sec\n`;
+                output += `Speedup vs JS: ${(result.keysPerSecond / results.singleThreaded).toFixed(2)}x\n`;
+                output += `Matches found: ${result.matchCount}\n\n`;
+
+                if (result.results.length > 0) {
+                    output += `Example match:\n`;
+                    output += `Public:  ${result.results[0].publicKey}\n`;
+                    output += `Private: ${result.results[0].privateKey}\n`;
+                }
+
+                await updateTestStatus('wasmBench1', 'success', output);
+                return true;
+            } catch (error) {
+                await updateTestStatus('wasmBench1', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest8_WasmMultiThreaded() {
+            await updateTestStatus('wasmBench2', 'pending', 'Running WASM multi-threaded benchmark...');
+
+            try {
+                const batchSize = 250000;
+                const targetPrefix = 'CA';
+                const workerCount = navigator.hardwareConcurrency || 4;
+
+                const result = await wasmGenerator.generateBatchParallel(batchSize, targetPrefix, workerCount);
+
+                results.wasmMultiThreaded = result.keysPerSecond;
+
+                let output = `✅ WASM multi-threaded benchmark completed!\n\n`;
+                output += `Batch size: ${result.batchSize.toLocaleString()}\n`;
+                output += `Worker count: ${workerCount}\n`;
+                output += `Time: ${result.totalTime.toFixed(2)}ms\n`;
+                output += `Performance: ${result.keysPerSecond.toFixed(0).toLocaleString()} keys/sec\n`;
+                output += `Speedup vs WASM single: ${(result.keysPerSecond / results.wasmSingleThreaded).toFixed(2)}x\n`;
+                output += `Speedup vs JS multi: ${(result.keysPerSecond / results.multiThreaded).toFixed(2)}x\n`;
+                output += `Matches found: ${result.matchCount}\n\n`;
+
+                if (result.results.length > 0) {
+                    output += `Example match:\n`;
+                    output += `Public:  ${result.results[0].publicKey}\n`;
+                    output += `Private: ${result.results[0].privateKey}\n`;
+                }
+
+                await updateTestStatus('wasmBench2', 'success', output);
+
+                document.getElementById('runComparison').disabled = false;
+                return true;
+            } catch (error) {
+                await updateTestStatus('wasmBench2', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        window.runAllTests = async function() {
+            document.getElementById('runTests').disabled = true;
+
+            const test1 = await runTest1_BrowserSupport();
+            if (!test1) {
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test2 = await runTest2_Initialize();
+            if (!test2) {
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test3 = await runTest3_Validation();
+            if (!test3) {
+                console.warn('Validation failed, but continuing with benchmarks...');
+            }
+
+            const test4 = await runTest4_SingleThreaded();
+            if (!test4) {
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test5 = await runTest5_MultiThreaded();
+            if (!test5) {
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test6 = await runTest6_WasmInit();
+            if (!test6) {
+                console.warn('WASM initialization failed, skipping WASM tests');
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test7 = await runTest7_WasmSingleThreaded();
+            if (!test7) {
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test8 = await runTest8_WasmMultiThreaded();
+
+            document.getElementById('runTests').disabled = false;
+        };
+
+        window.runComparison = function() {
+            const comparisonDiv = document.getElementById('comparison');
+            const resultDiv = document.getElementById('comparisonResult');
+
+            comparisonDiv.style.display = 'block';
+
+            const methods = [
+                { name: 'WebGPU (GPU)', kps: results.webgpu },
+                { name: 'WebCrypto Single-Thread (CPU)', kps: results.singleThreaded },
+                { name: 'WebCrypto Multi-Thread (CPU)', kps: results.multiThreaded }
+            ];
+
+            // Sort by performance
+            methods.sort((a, b) => b.kps - a.kps);
+
+            const fastest = methods[0].kps;
+
+            let html = '<table class="comparison-table">\n';
+            html += '<tr><th>Method</th><th>Keys/Second</th><th>vs Fastest</th><th>vs WebGPU</th></tr>\n';
+
+            for (const method of methods) {
+                const vsWebGPU = (method.kps / results.webgpu).toFixed(1);
+                const vsFastest = (method.kps / fastest * 100).toFixed(1);
+                const className = method.kps === fastest ? 'winner' : '';
+
+                html += `<tr class="${className}">`;
+                html += `<td>${method.name}</td>`;
+                html += `<td>${method.kps.toFixed(0).toLocaleString()}</td>`;
+                html += `<td>${vsFastest}%</td>`;
+                html += `<td>${vsWebGPU}x</td>`;
+                html += '</tr>\n';
+            }
+
+            html += '</table>\n\n';
+            html += `<div style="margin-top: 20px;">`;
+            html += `<strong>Winner:</strong> <span class="winner">${methods[0].name}</span><br>`;
+            html += `<strong>Performance gain vs WebGPU:</strong> <span class="winner">${(methods[0].kps / results.webgpu).toFixed(1)}x faster</span><br>`;
+            html += `<strong>Estimated time for 1M keys:</strong><br>`;
+            for (const method of methods) {
+                const timeSeconds = 1000000 / method.kps;
+                const timeMinutes = (timeSeconds / 60).toFixed(1);
+                html += `  - ${method.name}: ${timeMinutes} minutes<br>`;
+            }
+            html += `</div>`;
+
+            resultDiv.innerHTML = html;
+        };
+    </script>
+</body>
+</html>

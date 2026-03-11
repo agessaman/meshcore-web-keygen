@@ -801,12 +801,30 @@
                     
                     self.onmessage = async function(e) {
                         const { type, batchSize, targetPrefix } = e.data;
-                        
+
                         if (type === 'generate') {
                             const results = [];
+
+                            // OPTIMIZATION: Pre-compute prefix for fast comparison
+                            const prefix = targetPrefix ? targetPrefix.toUpperCase() : '';
+                            const prefixLen = prefix.length;
+
                             for (let i = 0; i < batchSize; i++) {
                                 const keypair = await generateKeypair();
-                                const matches = keypair.publicKey.startsWith(targetPrefix.toUpperCase());
+
+                                // OPTIMIZATION: Fast prefix check without string operations
+                                // Use direct character code comparison instead of .startsWith()
+                                let matches = true;
+                                if (prefixLen > 0) {
+                                    const pubKey = keypair.publicKey;
+                                    for (let j = 0; j < prefixLen; j++) {
+                                        if (pubKey.charCodeAt(j) !== prefix.charCodeAt(j)) {
+                                            matches = false;
+                                            break;
+                                        }
+                                    }
+                                }
+
                                 results.push({ ...keypair, matches });
                             }
                             self.postMessage({ type: 'results', results });
@@ -941,8 +959,23 @@
             }
 
             // Check if public key matches the target prefix
+            // OPTIMIZED: Use character code comparison instead of .startsWith()
             checkPrefix(publicKeyHex, targetPrefix) {
-                return publicKeyHex.startsWith(targetPrefix.toUpperCase());
+                if (!targetPrefix || targetPrefix.length === 0) {
+                    return true;
+                }
+
+                const prefix = targetPrefix.toUpperCase();
+                const len = prefix.length;
+
+                // Fast path: compare character codes directly (avoids string allocation)
+                for (let i = 0; i < len; i++) {
+                    if (publicKeyHex.charCodeAt(i) !== prefix.charCodeAt(i)) {
+                        return false;
+                    }
+                }
+
+                return true;
             }
 
             // Validate that a generated keypair is correct (matches Python implementation)

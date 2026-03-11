@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>WASM Optimization Test</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 {
+            color: #4ec9b0;
+            border-bottom: 2px solid #4ec9b0;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            background: #252526;
+            border-left: 4px solid #007acc;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .test-section.success {
+            border-left-color: #4ec9b0;
+        }
+        .test-section.error {
+            border-left-color: #f48771;
+        }
+        .test-title {
+            font-weight: bold;
+            color: #4ec9b0;
+            margin-bottom: 10px;
+        }
+        .test-result {
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            line-height: 1.6;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>WASM Optimization Test</h1>
+
+    <div class="test-section">
+        <div class="test-title">Optimization Details</div>
+        <div class="test-result">Testing the optimized WASM implementation that:
+1. Checks prefix match on raw bytes (not hex strings)
+2. Only converts to hex for actual matches
+3. Reduces hex conversion overhead by ~714x
+
+Expected performance improvement: 20-50% faster
+Target prefix: "CA" (2 hex characters)
+Batch size: 50,000 keys per test
+</div>
+    </div>
+
+    <div id="test1" class="test-section">
+        <div class="test-title">Test 1: WASM Single-Threaded</div>
+        <div class="test-result" id="test1Result">Not started</div>
+    </div>
+
+    <div id="test2" class="test-section">
+        <div class="test-title">Test 2: WASM Multi-Threaded (10 workers)</div>
+        <div class="test-result" id="test2Result">Not started</div>
+    </div>
+
+    <div id="comparison" class="test-section" style="display: none;">
+        <div class="test-title">Performance Comparison</div>
+        <div class="test-result" id="comparisonResult"></div>
+    </div>
+
+    <button onclick="runTests()">Run Optimized Tests</button>
+
+    <script type="module">
+        import { WasmKeyGenerator } from './wasm-keygen.js';
+
+        let wasmGen = null;
+        let results = {
+            single: null,
+            multi: null
+        };
+
+        async function updateStatus(testId, className, message) {
+            const element = document.getElementById(testId);
+            const resultElement = document.getElementById(testId + 'Result');
+
+            element.className = 'test-section ' + className;
+            resultElement.textContent = message;
+        }
+
+        async function test1_Single() {
+            await updateStatus('test1', '', 'Initializing WASM generator...');
+
+            try {
+                wasmGen = new WasmKeyGenerator();
+                const success = await wasmGen.initialize();
+
+                if (!success) {
+                    throw new Error('Failed to initialize WASM generator');
+                }
+
+                await updateStatus('test1', '', 'Running single-threaded benchmark...');
+
+                const batchSize = 50000;
+                const targetPrefix = 'CA';
+                const result = await wasmGen.generateBatch(batchSize, targetPrefix);
+
+                results.single = result.keysPerSecond;
+
+                let output = `✅ WASM single-threaded completed!\n\n`;
+                output += `Batch size: ${result.batchSize.toLocaleString()}\n`;
+                output += `Time: ${result.totalTime.toFixed(2)}ms\n`;
+                output += `Performance: ${result.keysPerSecond.toFixed(0).toLocaleString()} keys/sec\n`;
+                output += `Matches found: ${result.matchCount}\n\n`;
+
+                if (result.results.length > 0) {
+                    output += `Example match:\n`;
+                    output += `Public:  ${result.results[0].publicKey}\n`;
+                    output += `Private: ${result.results[0].privateKey}\n`;
+                }
+
+                await updateStatus('test1', 'success', output);
+                return true;
+            } catch (error) {
+                await updateStatus('test1', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function test2_Multi() {
+            await updateStatus('test2', '', 'Running multi-threaded benchmark...');
+
+            try {
+                const batchSize = 500000;
+                const targetPrefix = 'CA';
+                const workerCount = 10;
+
+                const result = await wasmGen.generateBatchParallel(batchSize, targetPrefix, workerCount);
+
+                results.multi = result.keysPerSecond;
+
+                let output = `✅ WASM multi-threaded completed!\n\n`;
+                output += `Batch size: ${result.batchSize.toLocaleString()}\n`;
+                output += `Worker count: ${workerCount}\n`;
+                output += `Time: ${result.totalTime.toFixed(2)}ms\n`;
+                output += `Performance: ${result.keysPerSecond.toFixed(0).toLocaleString()} keys/sec\n`;
+                output += `Speedup vs single: ${(result.keysPerSecond / results.single).toFixed(2)}x\n`;
+                output += `Parallel efficiency: ${((result.keysPerSecond / results.single / workerCount) * 100).toFixed(1)}%\n`;
+                output += `Matches found: ${result.matchCount}\n\n`;
+
+                if (result.results.length > 0) {
+                    output += `Example match:\n`;
+                    output += `Public:  ${result.results[0].publicKey}\n`;
+                    output += `Private: ${result.results[0].privateKey}\n`;
+                }
+
+                await updateStatus('test2', 'success', output);
+
+                // Show comparison
+                document.getElementById('comparison').style.display = 'block';
+                let comparison = `Optimized WASM Performance:\n\n`;
+                comparison += `Single-threaded: ${results.single.toFixed(0).toLocaleString()} keys/sec\n`;
+                comparison += `Multi-threaded:  ${results.multi.toFixed(0).toLocaleString()} keys/sec\n`;
+                comparison += `Speedup: ${(results.multi / results.single).toFixed(2)}x on ${workerCount} cores\n`;
+                comparison += `Parallel efficiency: ${((results.multi / results.single / workerCount) * 100).toFixed(1)}%\n\n`;
+                comparison += `Previous results (from test-webcrypto.html):\n`;
+                comparison += `WASM Single: 9,180 keys/sec\n`;
+                comparison += `WASM Multi:  29,427 keys/sec (32% efficiency)\n`;
+                comparison += `JS Multi:    38,986 keys/sec (53% efficiency)\n\n`;
+
+                const improvement = ((results.single / 9180 - 1) * 100).toFixed(1);
+                comparison += `Improvement: ${improvement}% faster single-threaded\n`;
+
+                if (results.multi > 38986) {
+                    comparison += `🎉 WASM multi now BEATS JavaScript multi!\n`;
+                } else {
+                    const remaining = ((38986 / results.multi - 1) * 100).toFixed(1);
+                    comparison += `Still ${remaining}% slower than JS multi\n`;
+                }
+
+                document.getElementById('comparisonResult').textContent = comparison;
+
+                return true;
+            } catch (error) {
+                await updateStatus('test2', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        window.runTests = async function() {
+            const test1 = await test1_Single();
+            if (!test1) return;
+
+            await test2_Multi();
+        };
+    </script>
+</body>
+</html>

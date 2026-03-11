@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Test - Ed25519 Key Generation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+            border-left: 4px solid #4CAF50;
+        }
+        .test-section.pending {
+            border-left-color: #FFC107;
+        }
+        .test-section.error {
+            border-left-color: #f44336;
+        }
+        .test-section.success {
+            border-left-color: #4CAF50;
+        }
+        .test-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .test-result {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            background: #fff;
+            padding: 10px;
+            border-radius: 3px;
+            margin-top: 10px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #2196F3;
+        }
+        .warning {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #ff9800;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 WebGPU Ed25519 Key Generation Test</h1>
+
+        <div class="info">
+            <strong>ℹ️ About this test:</strong><br>
+            This page tests the WebGPU implementation for GPU-accelerated Ed25519 key generation.
+            The implementation uses compute shaders to parallelize key generation on your GPU.
+        </div>
+
+        <div id="browserSupport" class="test-section pending">
+            <div class="test-title">1. Browser Support Check</div>
+            <div class="test-result" id="browserSupportResult">Checking...</div>
+        </div>
+
+        <div id="shaderLoad" class="test-section pending">
+            <div class="test-title">2. Shader Loading</div>
+            <div class="test-result" id="shaderLoadResult">Not started</div>
+        </div>
+
+        <div id="deviceInit" class="test-section pending">
+            <div class="test-title">3. WebGPU Device Initialization</div>
+            <div class="test-result" id="deviceInitResult">Not started</div>
+        </div>
+
+        <div id="pipelineCreate" class="test-section pending">
+            <div class="test-title">4. Compute Pipeline Creation</div>
+            <div class="test-result" id="pipelineCreateResult">Not started</div>
+        </div>
+
+        <div id="keyGen" class="test-section pending">
+            <div class="test-title">5. Key Generation Test (Small Batch)</div>
+            <div class="test-result" id="keyGenResult">Not started</div>
+        </div>
+
+        <div id="validation" class="test-section pending">
+            <div class="test-title">6. RFC 8032 Test Vector Validation</div>
+            <div class="test-result" id="validationResult">Not started</div>
+        </div>
+
+        <div style="margin-top: 30px;">
+            <button id="runTests" onclick="runAllTests()">Run All Tests</button>
+            <button id="runValidation" onclick="runValidation()" disabled>Run Validation Test</button>
+            <button id="runBenchmark" onclick="runBenchmark()" disabled>Run Performance Benchmark</button>
+        </div>
+
+        <div id="benchmark" class="test-section" style="display: none;">
+            <div class="test-title">Performance Benchmark Results</div>
+            <div class="test-result" id="benchmarkResult"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { WebGPUKeyGenerator } from './webgpu-keygen.js';
+
+        let gpuGenerator = null;
+
+        async function updateTestStatus(sectionId, status, message) {
+            const section = document.getElementById(sectionId);
+            const result = document.getElementById(sectionId + 'Result');
+
+            section.className = `test-section ${status}`;
+            result.textContent = message;
+        }
+
+        async function runTest1_BrowserSupport() {
+            await updateTestStatus('browserSupport', 'pending', 'Checking WebGPU support...');
+
+            try {
+                const isSupported = await WebGPUKeyGenerator.isSupported();
+
+                if (isSupported) {
+                    const adapter = await navigator.gpu.requestAdapter();
+
+                    // Try to get adapter info (not available in all browsers yet)
+                    let infoText = `✅ WebGPU is supported!\n\n`;
+
+                    try {
+                        if (adapter.requestAdapterInfo) {
+                            const info = await adapter.requestAdapterInfo();
+                            infoText += `GPU Vendor: ${info.vendor || 'Unknown'}\n`;
+                            infoText += `GPU Architecture: ${info.architecture || 'Unknown'}\n`;
+                            infoText += `GPU Device: ${info.device || 'Unknown'}\n`;
+                            infoText += `GPU Description: ${info.description || 'Unknown'}`;
+                        } else {
+                            infoText += `GPU adapter acquired (detailed info not available in this browser)`;
+                        }
+                    } catch (infoError) {
+                        infoText += `GPU adapter acquired (detailed info not available)`;
+                    }
+
+                    await updateTestStatus('browserSupport', 'success', infoText);
+                    return true;
+                } else {
+                    await updateTestStatus('browserSupport', 'error',
+                        `❌ WebGPU is not supported in this browser.\n\n` +
+                        `Supported browsers:\n` +
+                        `- Chrome/Edge 113+\n` +
+                        `- Safari 17+\n` +
+                        `- Firefox 118+ (experimental)`
+                    );
+                    return false;
+                }
+            } catch (error) {
+                await updateTestStatus('browserSupport', 'error',
+                    `❌ Error: ${error.message}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest2_ShaderLoading() {
+            await updateTestStatus('shaderLoad', 'pending', 'Loading shaders...');
+
+            try {
+                gpuGenerator = new WebGPUKeyGenerator();
+
+                const loaded = await gpuGenerator.loadShaders();
+
+                if (loaded) {
+                    await updateTestStatus('shaderLoad', 'success',
+                        `✅ Shaders loaded successfully!\n\n` +
+                        `Total shader size: ${gpuGenerator.shaderCode.length.toLocaleString()} bytes\n` +
+                        `i256.wgsl: 256-bit arithmetic library\n` +
+                        `ed25519-gpu.wgsl: SHA-512 + curve operations`
+                    );
+                    return true;
+                } else {
+                    await updateTestStatus('shaderLoad', 'error',
+                        `❌ Failed to load shaders\n\n` +
+                        `Make sure the following files exist:\n` +
+                        `- i256.wgsl\n` +
+                        `- ed25519-gpu.wgsl`
+                    );
+                    return false;
+                }
+            } catch (error) {
+                await updateTestStatus('shaderLoad', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest3_DeviceInit() {
+            await updateTestStatus('deviceInit', 'pending', 'Initializing WebGPU device...');
+
+            try {
+                // Device initialization is part of full initialize()
+                // Just check if we can get the device
+                const adapter = await navigator.gpu.requestAdapter();
+                const device = await adapter.requestDevice();
+
+                await updateTestStatus('deviceInit', 'success',
+                    `✅ WebGPU device initialized!\n\n` +
+                    `Max buffer size: ${device.limits.maxStorageBufferBindingSize.toLocaleString()} bytes\n` +
+                    `Max workgroup size X: ${device.limits.maxComputeWorkgroupSizeX}\n` +
+                    `Max workgroup size Y: ${device.limits.maxComputeWorkgroupSizeY}\n` +
+                    `Max workgroup size Z: ${device.limits.maxComputeWorkgroupSizeZ}\n` +
+                    `Max compute invocations: ${device.limits.maxComputeInvocationsPerWorkgroup}`
+                );
+
+                device.destroy();
+                return true;
+            } catch (error) {
+                await updateTestStatus('deviceInit', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest4_PipelineCreation() {
+            await updateTestStatus('pipelineCreate', 'pending', 'Creating compute pipeline...');
+
+            try {
+                // This will complete the full initialization including pipeline creation
+                await gpuGenerator.initialize();
+
+                await updateTestStatus('pipelineCreate', 'success',
+                    `✅ Compute pipeline created successfully!\n\n` +
+                    `The pipeline is ready to generate keys on the GPU.\n` +
+                    `Workgroup size: 256 threads`
+                );
+                return true;
+            } catch (error) {
+                await updateTestStatus('pipelineCreate', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        async function runTest5_KeyGeneration() {
+            await updateTestStatus('keyGen', 'pending', 'Testing key generation...');
+
+            try {
+                // Note: The shader may not produce correct keys yet (needs validation)
+                // This test just verifies the pipeline executes without crashing
+
+                await updateTestStatus('keyGen', 'pending',
+                    'Running small batch (1000 keys)...\n' +
+                    'Note: Ed25519 implementation needs validation against test vectors.'
+                );
+
+                const result = await gpuGenerator.generateBatch(1000, 'CA');
+
+                await updateTestStatus('keyGen', 'success',
+                    `✅ Batch completed without errors!\n\n` +
+                    `Batch size: ${result.batchSize.toLocaleString()} keys\n` +
+                    `GPU time: ${result.gpuTime.toFixed(2)}ms\n` +
+                    `Performance: ${result.keysPerSecond.toFixed(0)} keys/sec\n` +
+                    `Matches found: ${result.matchCount}\n\n` +
+                    `⚠️ WARNING: Keys need validation against RFC 8032 test vectors!\n` +
+                    `The Ed25519 implementation has not been fully tested yet.`
+                );
+
+                document.getElementById('runBenchmark').disabled = false;
+                document.getElementById('runValidation').disabled = false;
+                return true;
+            } catch (error) {
+                await updateTestStatus('keyGen', 'error',
+                    `❌ Error: ${error.message}\n\n${error.stack}`
+                );
+                return false;
+            }
+        }
+
+        // RFC 8032 Test Vectors for Ed25519
+        // These are from RFC 8032 Section 7.1 - TEST 1, TEST 2, and TEST 3
+        const RFC8032_TEST_VECTORS = [
+            {
+                name: "RFC 8032 Test 1",
+                seed: "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+                publicKey: "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+            },
+            {
+                name: "RFC 8032 Test 2",
+                seed: "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+                publicKey: "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+            },
+            {
+                name: "RFC 8032 Test 3",
+                seed: "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+                publicKey: "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+            }
+        ];
+
+        async function runValidation() {
+            await updateTestStatus('validation', 'pending', 'Running validation tests...');
+
+            try {
+                // Load noble-ed25519 for comparison
+                let nobleEd25519;
+                try {
+                    // Try ESM version first
+                    nobleEd25519 = await import('https://esm.sh/@noble/ed25519@2');
+
+                    // Configure SHA-512 for noble-ed25519
+                    // Load @noble/hashes for SHA-512
+                    try {
+                        const hashes = await import('https://esm.sh/@noble/hashes@1/sha512');
+                        if (nobleEd25519.etc) {
+                            nobleEd25519.etc.sha512Sync = (...m) => {
+                                return hashes.sha512(nobleEd25519.etc.concatBytes(...m));
+                            };
+                            nobleEd25519.etc.sha512Async = async (...m) => {
+                                return hashes.sha512(nobleEd25519.etc.concatBytes(...m));
+                            };
+                        }
+                        console.log('✓ SHA-512 configured with @noble/hashes');
+                    } catch (hashErr) {
+                        console.warn('Failed to load @noble/hashes, will use local fallback');
+                        // Just use the local implementation instead
+                        throw hashErr;
+                    }
+
+                    console.log('✓ noble-ed25519 loaded for validation (esm.sh)');
+                } catch (e1) {
+                    try {
+                        // Fallback to unpkg
+                        nobleEd25519 = await import('https://unpkg.com/@noble/ed25519@2/index.js');
+
+                        // Configure SHA-512
+                        if (nobleEd25519.etc && nobleEd25519.etc.sha512Async) {
+                            nobleEd25519.etc.sha512Async = async (...m) => {
+                                const bytes = m.reduce((acc, val) => {
+                                    if (val instanceof Uint8Array) {
+                                        const tmp = new Uint8Array(acc.length + val.length);
+                                        tmp.set(acc);
+                                        tmp.set(val, acc.length);
+                                        return tmp;
+                                    }
+                                    return acc;
+                                }, new Uint8Array());
+                                return new Uint8Array(await crypto.subtle.digest('SHA-512', bytes));
+                            };
+                        }
+
+                        console.log('✓ noble-ed25519 loaded for validation (unpkg)');
+                    } catch (e2) {
+                        try {
+                            // Try the local fallback if available
+                            nobleEd25519 = await import('./noble-ed25519-offline-simple.js');
+                            console.log('✓ noble-ed25519 loaded for validation (local)');
+                        } catch (e3) {
+                            await updateTestStatus('validation', 'error',
+                                `❌ Failed to load noble-ed25519 from all sources:\n\n` +
+                                `esm.sh: ${e1.message}\n` +
+                                `unpkg: ${e2.message}\n` +
+                                `local: ${e3.message}\n\n` +
+                                `noble-ed25519 is needed to compare GPU results against a known-good implementation.`
+                            );
+                            return;
+                        }
+                    }
+                }
+
+                let results = 'Testing GPU implementation against RFC 8032 vectors and noble-ed25519:\n\n';
+                let passed = 0;
+                let failed = 0;
+
+                // First, test using the CPU implementation to get expected results
+                for (const vector of RFC8032_TEST_VECTORS) {
+                    results += `${vector.name}:\n`;
+                    results += `Seed/SecretKey: ${vector.seed}\n`;
+
+                    // Generate key with noble-ed25519 (CPU reference)
+                    const secretKey = new Uint8Array(32);
+                    for (let i = 0; i < 32; i++) {
+                        secretKey[i] = parseInt(vector.seed.substr(i * 2, 2), 16);
+                    }
+
+                    try {
+                        // Use noble-ed25519's getPublicKey which does the full Ed25519 derivation
+                        // (hashing, clamping, and scalar multiplication)
+                        let cpuPublicKey;
+
+                        if (nobleEd25519.getPublicKey) {
+                            // Simple API - pass the secret key directly
+                            cpuPublicKey = await nobleEd25519.getPublicKey(secretKey);
+                            if (cpuPublicKey.constructor.name === 'Point' || cpuPublicKey.toRawBytes) {
+                                cpuPublicKey = cpuPublicKey.toRawBytes ? cpuPublicKey.toRawBytes() : cpuPublicKey.toBytes();
+                            }
+                        } else {
+                            throw new Error('getPublicKey not available');
+                        }
+
+                        // Ensure cpuPublicKey is Uint8Array
+                        if (!(cpuPublicKey instanceof Uint8Array)) {
+                            cpuPublicKey = new Uint8Array(cpuPublicKey);
+                        }
+
+                        const cpuPubKeyHex = Array.from(cpuPublicKey)
+                            .map(b => b.toString(16).padStart(2, '0'))
+                            .join('');
+
+                        results += `CPU Result: ${cpuPubKeyHex}\n`;
+                        results += `Expected:   ${vector.publicKey}\n`;
+
+                        if (cpuPubKeyHex === vector.publicKey) {
+                            results += `✅ CPU implementation matches RFC 8032\n\n`;
+                            passed++;
+                        } else {
+                            results += `❌ CPU implementation DOES NOT match RFC 8032\n\n`;
+                            failed++;
+                        }
+                    } catch (e) {
+                        results += `❌ CPU test error: ${e.message}\n`;
+                        results += `Stack: ${e.stack}\n\n`;
+                        failed++;
+                    }
+                }
+
+                // Now test GPU implementation
+                // Note: Current GPU shader has placeholder Ed25519 implementation
+                results += '\n--- GPU Implementation Test ---\n';
+                results += '⚠️ WARNING: The GPU shader currently has a PLACEHOLDER\n';
+                results += 'for ed25519_scalar_mult_base() that just returns the scalar.\n';
+                results += 'This needs to be replaced with the actual implementation\n';
+                results += 'from ed25519-curve.wgsl\n\n';
+
+                results += 'To fix this:\n';
+                results += '1. Update ed25519-gpu.wgsl to include the curve operations\n';
+                results += '2. Replace the placeholder ed25519_scalar_mult_base with ed25519_scalar_mult_base_impl\n';
+                results += '3. Import the modular arithmetic and point operations\n';
+
+                const status = failed === 0 ? 'success' : 'error';
+                const summary = `\n\nSummary: ${passed} passed, ${failed} failed out of ${RFC8032_TEST_VECTORS.length} tests\n`;
+
+                if (status === 'success') {
+                    await updateTestStatus('validation', 'success',
+                        '✅ CPU validation passed!\n\n' + results + summary
+                    );
+                } else {
+                    await updateTestStatus('validation', 'error',
+                        '❌ Validation issues found\n\n' + results + summary
+                    );
+                }
+
+            } catch (error) {
+                await updateTestStatus('validation', 'error',
+                    `❌ Validation error: ${error.message}\n\n${error.stack}`
+                );
+            }
+        }
+
+        window.runValidation = runValidation;
+
+        window.runAllTests = async function() {
+            document.getElementById('runTests').disabled = true;
+
+            const test1 = await runTest1_BrowserSupport();
+            if (!test1) {
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test2 = await runTest2_ShaderLoading();
+            if (!test2) {
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test3 = await runTest3_DeviceInit();
+            if (!test3) {
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test4 = await runTest4_PipelineCreation();
+            if (!test4) {
+                document.getElementById('runTests').disabled = false;
+                return;
+            }
+
+            const test5 = await runTest5_KeyGeneration();
+
+            document.getElementById('runTests').disabled = false;
+        };
+
+        window.runBenchmark = async function() {
+            const benchmarkDiv = document.getElementById('benchmark');
+            const resultDiv = document.getElementById('benchmarkResult');
+
+            benchmarkDiv.style.display = 'block';
+            benchmarkDiv.className = 'test-section pending';
+            resultDiv.textContent = 'Running benchmark...';
+
+            try {
+                const sizes = [1000, 10000, 100000];
+                let results = '';
+
+                for (const size of sizes) {
+                    resultDiv.textContent = `Testing batch size: ${size.toLocaleString()}...`;
+
+                    const result = await gpuGenerator.generateBatch(size, 'FF');
+
+                    results += `Batch size: ${size.toLocaleString()}\n`;
+                    results += `  GPU time: ${result.gpuTime.toFixed(2)}ms\n`;
+                    results += `  Keys/sec: ${result.keysPerSecond.toFixed(0)}\n`;
+                    results += `  Matches: ${result.matchCount}\n\n`;
+                }
+
+                benchmarkDiv.className = 'test-section success';
+                resultDiv.textContent = '✅ Benchmark completed!\n\n' + results;
+
+            } catch (error) {
+                benchmarkDiv.className = 'test-section error';
+                resultDiv.textContent = `❌ Error: ${error.message}`;
+            }
+        };
+
+        // Auto-run tests on load
+        // window.addEventListener('load', runAllTests);
+    </script>
+</body>
+</html>
