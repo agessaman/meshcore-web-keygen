@@ -2,6 +2,8 @@ use wasm_bindgen::prelude::*;
 use sha2::{Sha512, Digest};
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::constants::ED25519_BASEPOINT_TABLE;
+use rand_chacha::ChaCha8Rng;
+use rand_core::{RngCore, SeedableRng};
 
 /// Generate a batch of Ed25519 vanity keys, returning only those matching the prefix.
 ///
@@ -22,10 +24,15 @@ pub fn generate_batch(prefix_bytes: &[u8], prefix_nibbles: u32, batch_size: u32)
 
     let mut match_count: u32 = 0;
 
+    // Seed a fast PRNG once per batch to avoid per-key WASM↔JS boundary crossings
+    let mut rng_seed = [0u8; 32];
+    getrandom::getrandom(&mut rng_seed).unwrap();
+    let mut rng = ChaCha8Rng::from_seed(rng_seed);
+
     for _ in 0..batch_size {
-        // 1. Generate random 32-byte seed
+        // 1. Generate random 32-byte seed via fast PRNG (no JS interop)
         let mut seed = [0u8; 32];
-        getrandom::getrandom(&mut seed).unwrap();
+        rng.fill_bytes(&mut seed);
 
         // 2. SHA-512(seed)
         let mut hasher = Sha512::new();

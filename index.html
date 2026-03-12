@@ -633,7 +633,7 @@
                 this.initialized = false;
                 this.workers = [];
                 this.numWorkers = navigator.hardwareConcurrency || 4;
-                this.batchSize = 2048; // WASM is fast enough for large batches per worker
+                this.batchSize = 4096; // WASM is fast enough for large batches per worker
             }
 
             async initialize() {
