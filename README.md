@@ -34,19 +34,19 @@ Pre-fill the prefix input:
 
 ## Performance
 
-Typical speeds:
-- Desktop: 10,000-50,000 keys/second
-- Mobile: 1,000-10,000 keys/second
+Baseline: ~100,000 keys/second on modern devices. Example measurements:
+- **iPhone 15 Pro**: ~100k keys/sec
+- **M4 Mac Mini**: ~300k keys/sec
 
-Expected time to find a key at 10k keys/second:
-- 1-character prefix: ~0.01 seconds
-- 2-character prefix: ~0.3 seconds
-- 3-character prefix: ~4 seconds
-- 4-character prefix: ~1 minute
-- 5-character prefix: ~17 minutes
-- 6-character prefix: ~4.5 hours
-- 7-character prefix: ~3 days
-- 8-character prefix: ~47 days
+Expected time to find a key at 100k keys/second:
+- 1-character prefix: < 0.01 seconds
+- 2-character prefix: ~0.003 seconds
+- 3-character prefix: ~0.04 seconds
+- 4-character prefix: ~0.7 seconds
+- 5-character prefix: ~10 seconds
+- 6-character prefix: ~3 minutes
+- 7-character prefix: ~45 minutes
+- 8-character prefix: ~12 hours
 
 ## Browser Support
 
