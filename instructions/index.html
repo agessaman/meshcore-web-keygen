@@ -447,7 +447,6 @@
                     <li>MeshCore device (companion or repeater)</li>
                     <li>MeshCore mobile app installed on your phone or <a href="https://app.meshcore.nz/" target="_blank" rel="noopener">MeshCore Web App</a></li>
                     <li>USB-C cable for connecting to your device</li>
-                    <li>Computer with internet access (for flashing repeater devices)</li>
                 </ul>
             </div>
 
@@ -466,10 +465,10 @@
                         <span class="device-title">Repeater + Computer</span>
                         <span class="device-desc">Direct console command</span>
                     </button>
-                    <button class="device-btn" data-type="repeater-flash">
+                    <button class="device-btn" data-type="repeater-companion">
                         <span class="device-icon">📡</span>
-                        <span class="device-title">Repeater (No Computer)</span>
-                        <span class="device-desc">Requires firmware flashing</span>
+                        <span class="device-title">Repeater + Companion</span>
+                        <span class="device-desc">Set key over LoRa via app</span>
                     </button>
                 </div>
             </div>
@@ -624,59 +623,45 @@
                 </div>
             </div>
 
-            <div class="section instructions-content" id="repeater-flash-instructions">
-                <h2>📡 Repeater (No Computer) Instructions</h2>
-                <div class="warning">
-                    <strong>⚠️ Important:</strong> You must temporarily flash companion firmware to import keys on repeater devices.
-                </div>
-
-                <div class="tip">
-                    <strong>💡 Alternative Phone-Only Method:</strong> nRF52-based devices (RAK, T114, Seeed, XIAO) can be updated over-the-air without a computer using the <a href="https://github.com/meshcore-dev/MeshCore/blob/main/docs/faq.md#71-q-how-to-update-nrf-rak-t114-seed-xiao-repeater-and-room-server-firmware-over-the-air-using-the-new-simpler-dfu-app" target="_blank" rel="noopener">nRF Device Firmware Update app</a>.
-                </div>
-
-                <p>For the simplest process, follow these steps:</p>
+            <div class="section instructions-content" id="repeater-companion-instructions">
+                <h2>📡 Repeater + Companion Instructions</h2>
+                <p>You can change the private key on a repeater remotely over LoRa using the MeshCore app and the <code>set prv.key</code> command. Follow these steps:</p>
 
                 <div class="step">
                     <div class="step-number">1</div>
                     <div class="step-content">
-                        <h3>Connect Your Device</h3>
-                        <p>Connect your repeater device to your computer using a USB-C cable.</p>
+                        <h3>Select Repeater from Contact List</h3>
+                        <p>Open the MeshCore app and select the repeater from your Contact List.</p>
                     </div>
                 </div>
 
                 <div class="step">
                     <div class="step-number">2</div>
                     <div class="step-content">
-                        <h3>Access the Flasher</h3>
-                        <p>Open your web browser and go to <a href="https://flasher.meshcore.co.uk/" target="_blank">https://flasher.meshcore.co.uk/</a></p>
-                        <p>Select the type of device you are flashing from the list of available firmware options.</p>
-                        <div class="image-container">
-                            <img src="images/Repeater_02_Flasher.webp" alt="MeshCore flasher website homepage" class="instruction-image">
-                        </div>
+                        <h3>Enter Password and Log into Repeater</h3>
+                        <p>Enter the repeater password and log in to access the repeater.</p>
                     </div>
                 </div>
 
                 <div class="step">
                     <div class="step-number">3</div>
                     <div class="step-content">
-                        <h3>Select Companion Firmware</h3>
-                        <p>Choose "Companion" firmware from the firmware selection options. Do not select "Repeater" firmware.</p>
-                        <div class="image-container">
-                            <img src="images/Repeater_03_Select_Client_Firmware.webp" alt="Firmware selection screen with Companion option highlighted" class="instruction-image">
-                        </div>
+                        <h3>Open Command Line</h3>
+                        <p>Click on the <strong>Command Line</strong> option at the bottom of the repeater info screen.</p>
                     </div>
                 </div>
 
                 <div class="step">
                     <div class="step-number">4</div>
                     <div class="step-content">
-                        <h3>Flash the Firmware</h3>
-                        <p>Follow the on-screen instructions to flash the companion firmware to your device. This process may take a few minutes.</p>
-                        <div class="warning">
-                            <strong>⚠️ Important:</strong> Do not select "Erase Device" during the flashing process. This will erase all configuration and require you to set up the device from scratch.
+                        <h3>Set the Private Key</h3>
+                        <p>Enter the following command and press Enter:</p>
+                        <div class="code-block">
+                            set prv.key &lt;hex&gt;
                         </div>
-                        <div class="image-container">
-                            <img src="images/Repeater_04_Flash_Firmware.webp" alt="Flashing progress screen" class="instruction-image">
+                        <p>Replace <code>&lt;hex&gt;</code> with your 128-character private key from the key generator.</p>
+                        <div class="warning">
+                            <strong>Important:</strong> Use your complete 128-character private key (hex). The new private key will take effect after you reboot the repeater.
                         </div>
                     </div>
                 </div>
@@ -684,86 +669,8 @@
                 <div class="step">
                     <div class="step-number">5</div>
                     <div class="step-content">
-                        <h3>Import Your Key</h3>
-                        <p>Now that your device has companion firmware, follow these steps to import your custom key:</p>
-                        
-                        <div class="sub-steps">
-                            <h4>5a. Connect to Your Device</h4>
-                            <p>Connect your phone to the MeshCore device using a USB-C cable or Bluetooth.</p>
-                        </div>
-
-                        <div class="sub-steps">
-                            <h4>5b. Open MeshCore App</h4>
-                            <p>Launch the MeshCore mobile app on your phone. The app should automatically detect the connected device.</p>
-                            <div class="image-container">
-                                <img src="images/02_Connect.webp" alt="MeshCore app home screen showing connected device" class="instruction-image">
-                            </div>
-                        </div>
-
-                        <div class="sub-steps">
-                            <h4>5c. Access Settings</h4>
-                            <p>Tap the Settings gear icon in the top-right corner of the app.</p>
-                            <div class="image-container">
-                                <img src="images/03_Settings.webp" alt="MeshCore app with settings gear icon highlighted" class="instruction-image">
-                            </div>
-                        </div>
-
-                        <div class="sub-steps">
-                            <h4>5d. Manage Identity Key</h4>
-                            <p>Scroll down and tap "Manage Identity Key" in the settings menu.</p>
-                            <div class="image-container">
-                                <img src="images/04_Manage_Identity_Key.webp" alt="Settings menu with Manage Identity Key option highlighted" class="instruction-image">
-                            </div>
-                        </div>
-
-                        <div class="sub-steps">
-                            <h4>5e. Enter Private Key</h4>
-                            <p>Copy your private key from the key generator and paste it into the text box. Make sure to copy the entire 128-character key.</p>
-                            <div class="image-container">
-                                <img src="images/05_Paste_Private_Key.webp" alt="Private key input field with sample key pasted" class="instruction-image">
-                            </div>
-                            <div class="warning">
-                                <strong>Important:</strong> Only paste the private key, not the public key. The private key is 128 characters long.
-                            </div>
-                        </div>
-
-                        <div class="sub-steps">
-                            <h4>5f. Import the Key</h4>
-                            <p>Tap "Import Private Key" to apply the key to your device.</p>
-                            <div class="image-container">
-                                <img src="images/06_Import_Private_Key.webp" alt="Import Private Key button highlighted" class="instruction-image">
-                            </div>
-                        </div>
-
-                        <div class="sub-steps">
-                            <h4>5g. Save Changes</h4>
-                            <p>Tap the checkmark ✓ in the top-right corner to save your changes. This step is crucial - the key won't be applied until you save.</p>
-                            <div class="image-container">
-                                <img src="images/07_Checkmark_Save_Settings.webp" alt="Checkmark save button highlighted in top-right corner" class="instruction-image">
-                            </div>
-                        </div>
-
-                        <div class="sub-steps">
-                            <h4>5h. Verify the Change</h4>
-                            <p>Return to the main screen and verify that your new public key is displayed. The first two characters should match your desired prefix.</p>
-                            <div class="image-container">
-                                <img src="images/08_Verify_Change.webp" alt="Main screen showing new public key with prefix highlighted" class="instruction-image">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="step">
-                    <div class="step-number">6</div>
-                    <div class="step-content">
-                        <h3>Re-flash to Repeater Firmware</h3>
-                        <p>After successfully importing your key, return to the flasher website and flash the "Repeater" firmware back to your device.</p>
-                        <div class="image-container">
-                            <img src="images/Repeater_06_Flash_Repeater_Firmware.webp" alt="Firmware selection screen with Repeater option highlighted" class="instruction-image">
-                        </div>
-                        <div class="warning">
-                            <strong>Important:</strong> Your custom key will be preserved after re-flashing to repeater firmware.
-                        </div>
+                        <h3>Reboot the Repeater</h3>
+                        <p>Reboot the repeater after running <code>set prv.key &lt;hex&gt;</code> for the new private key to take effect.</p>
                     </div>
                 </div>
             </div>
@@ -899,7 +806,7 @@
                 
                 // Show/hide JSON import section based on workflow
                 if (jsonImportSection) {
-                    if (selectedType === 'companion' || selectedType === 'repeater-flash') {
+                    if (selectedType === 'companion') {
                         jsonImportSection.classList.add('active');
                     } else {
                         jsonImportSection.classList.remove('active');

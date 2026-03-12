@@ -504,14 +504,14 @@
                         </div>
                         
                         <div class="import-section">
-                            <h4>📡 For Repeater (No Computer)</h4>
-                            <div class="warning-box">
-                                <strong>⚠️ Important:</strong> You must temporarily <a href="https://flasher.meshcore.co.uk/" target="_blank">flash companion firmware</a> first.
-                            </div>
+                            <h4>📡 For Repeater + Companion</h4>
+                            <p style="margin-bottom: 10px;">You can set the private key on a repeater remotely over LoRa:</p>
                             <ol>
-                                <li>Flash your node with <strong>companion firmware</strong> temporarily</li>
-                                <li>Follow the companion instructions above</li>
-                                <li>After importing, you can safely re-flash to repeater firmware</li>
+                                <li>Select Repeater from Contact List</li>
+                                <li>Enter Password and Log into Repeater</li>
+                                <li>Click on <strong>Command Line</strong> option (at the bottom of the repeater info screen)</li>
+                                <li>Enter <code>set prv.key &lt;hex&gt;</code> and press Enter</li>
+                                <li>Reboot the repeater after <code>set prv.key &lt;hex&gt;</code> for the new private key to take effect</li>
                             </ol>
                         </div>
                         

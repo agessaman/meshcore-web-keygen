@@ -37,6 +37,8 @@ Pre-fill the prefix input:
 Baseline: ~100,000 keys/second on modern devices. Example measurements:
 - **iPhone 15 Pro**: ~100k keys/sec
 - **M4 Mac Mini**: ~300k keys/sec
+- **Intel i7-9700K**: ~85k keys/sec
+- **AMD Ryzen 9950X**: ~417k keys/sec
 
 Expected time to find a key at 100k keys/second:
 - 1-character prefix: < 0.01 seconds
