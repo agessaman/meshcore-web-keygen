@@ -24,7 +24,7 @@ struct Params {
 }
 
 struct Flags {
-  values: array<u32>,
+  values: array<atomic<u32>>,
 }
 
 @group(0) @binding(0) var<storage, read> scalars: Scalars;
@@ -355,6 +355,12 @@ fn matches_prefix(y: array<u32, 16>) -> bool {
   return true;
 }
 
+fn mark_match(index: u32) {
+  let wordIndex = index >> 5u;
+  let bit = 1u << (index & 31u);
+  atomicOr(&flags.values[wordIndex], bit);
+}
+
 @compute @workgroup_size(${workgroupSize})
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let index = gid.x;
@@ -369,7 +375,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let zInv = fe_pow_p_minus_2(point.Z);
   let y = fe_mul(point.Y, zInv);
-  flags.values[index] = select(0u, 1u, matches_prefix(y));
+  if (matches_prefix(y)) {
+    mark_match(index);
+  }
 }
 `;
 }
@@ -387,11 +395,13 @@ export class WebGpuEd25519Scanner {
     this.readBuffer = null;
     this.bindGroup = null;
     this.capacity = 0;
+    this.flagsWordCapacity = 0;
     this.initialized = false;
     this.backend = 'cpu';
     this.workgroupSize = 64;
     this.supportedWorkgroupSizes = [];
     this.pipelineCache = new Map();
+    this.zeroFlags = new Uint32Array(0);
   }
 
   async initialize() {
@@ -481,6 +491,7 @@ export class WebGpuEd25519Scanner {
     }
 
     const nextCapacity = Math.max(batchSize, this.workgroupSize);
+    const nextFlagsWordCapacity = Math.ceil(nextCapacity / 32);
 
     this.scalarBuffer?.destroy();
     this.flagsBuffer?.destroy();
@@ -493,16 +504,18 @@ export class WebGpuEd25519Scanner {
     });
 
     this.flagsBuffer = this.device.createBuffer({
-      size: nextCapacity * Uint32Array.BYTES_PER_ELEMENT,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+      size: nextFlagsWordCapacity * Uint32Array.BYTES_PER_ELEMENT,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
     });
 
     this.readBuffer = this.device.createBuffer({
-      size: nextCapacity * Uint32Array.BYTES_PER_ELEMENT,
+      size: nextFlagsWordCapacity * Uint32Array.BYTES_PER_ELEMENT,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
     });
 
     this.capacity = nextCapacity;
+    this.flagsWordCapacity = nextFlagsWordCapacity;
+    this.zeroFlags = new Uint32Array(nextFlagsWordCapacity);
   }
 
   createBindGroup() {
@@ -523,9 +536,10 @@ export class WebGpuEd25519Scanner {
     return this.bindGroup;
   }
 
-  async scanBatchWithCurrentPipeline(scalarWords, prefixBytes, prefixNibbleLength) {
+  async scanBatchBitset(scalarWords, prefixBytes, prefixNibbleLength) {
     const batchSize = scalarWords.length / 8;
     this.ensureCapacity(batchSize);
+    const flagsWordLength = Math.ceil(batchSize / 32);
 
     const params = new Uint32Array([
       batchSize,
@@ -538,6 +552,7 @@ export class WebGpuEd25519Scanner {
 
     this.device.queue.writeBuffer(this.scalarBuffer, 0, scalarWords);
     this.device.queue.writeBuffer(this.paramsBuffer, 0, params);
+    this.device.queue.writeBuffer(this.flagsBuffer, 0, this.zeroFlags.subarray(0, flagsWordLength));
 
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginComputePass();
@@ -546,13 +561,53 @@ export class WebGpuEd25519Scanner {
     pass.dispatchWorkgroups(Math.ceil(batchSize / this.workgroupSize));
     pass.end();
 
-    encoder.copyBufferToBuffer(this.flagsBuffer, 0, this.readBuffer, 0, batchSize * Uint32Array.BYTES_PER_ELEMENT);
+    encoder.copyBufferToBuffer(this.flagsBuffer, 0, this.readBuffer, 0, flagsWordLength * Uint32Array.BYTES_PER_ELEMENT);
     this.device.queue.submit([encoder.finish()]);
 
-    await this.readBuffer.mapAsync(GPUMapMode.READ, 0, batchSize * Uint32Array.BYTES_PER_ELEMENT);
-    const copy = new Uint32Array(this.readBuffer.getMappedRange(0, batchSize * Uint32Array.BYTES_PER_ELEMENT)).slice();
+    await this.readBuffer.mapAsync(GPUMapMode.READ, 0, flagsWordLength * Uint32Array.BYTES_PER_ELEMENT);
+    const copy = new Uint32Array(this.readBuffer.getMappedRange(0, flagsWordLength * Uint32Array.BYTES_PER_ELEMENT)).slice();
     this.readBuffer.unmap();
     return copy;
+  }
+
+  expandBitsetToFlags(bitset, batchSize) {
+    const flags = new Uint32Array(batchSize);
+    for (let wordIndex = 0; wordIndex < bitset.length; wordIndex += 1) {
+      let bits = bitset[wordIndex];
+      if (bits === 0) {
+        continue;
+      }
+      const baseIndex = wordIndex << 5;
+      while (bits !== 0) {
+        const bitIndex = 31 - Math.clz32(bits);
+        const candidateIndex = baseIndex + bitIndex;
+        if (candidateIndex < batchSize) {
+          flags[candidateIndex] = 1;
+        }
+        bits &= ~(1 << bitIndex);
+      }
+    }
+    return flags;
+  }
+
+  decodeMatchedIndexes(bitset, batchSize) {
+    const matchedIndexes = [];
+    for (let wordIndex = 0; wordIndex < bitset.length; wordIndex += 1) {
+      let bits = bitset[wordIndex];
+      if (bits === 0) {
+        continue;
+      }
+      const baseIndex = wordIndex << 5;
+      while (bits !== 0) {
+        const bitIndex = 31 - Math.clz32(bits);
+        const candidateIndex = baseIndex + bitIndex;
+        if (candidateIndex < batchSize) {
+          matchedIndexes.push(candidateIndex);
+        }
+        bits &= ~(1 << bitIndex);
+      }
+    }
+    return matchedIndexes;
   }
 
   async autotuneWorkgroupSize(batchSize = 131072, trials = 2) {
@@ -569,12 +624,12 @@ export class WebGpuEd25519Scanner {
       this.setWorkgroupSize(size);
       this.ensureCapacity(batchSize);
 
-      await this.scanBatchWithCurrentPipeline(scalarWords, prefixBytes, 1);
+      await this.scanBatchBitset(scalarWords, prefixBytes, 1);
 
       let elapsedMs = 0;
       for (let trial = 0; trial < trials; trial += 1) {
         const start = performance.now();
-        await this.scanBatchWithCurrentPipeline(scalarWords, prefixBytes, 1);
+        await this.scanBatchBitset(scalarWords, prefixBytes, 1);
         elapsedMs += performance.now() - start;
       }
 
@@ -596,7 +651,20 @@ export class WebGpuEd25519Scanner {
       throw new Error('WebGPU is not available');
     }
 
-    return this.scanBatchWithCurrentPipeline(scalarWords, prefixBytes, prefixNibbleLength);
+    const batchSize = scalarWords.length / 8;
+    const bitset = await this.scanBatchBitset(scalarWords, prefixBytes, prefixNibbleLength);
+    return this.expandBitsetToFlags(bitset, batchSize);
+  }
+
+  async scanBatchMatches(scalarWords, prefixBytes, prefixNibbleLength) {
+    await this.initialize();
+    if (!this.initialized) {
+      throw new Error('WebGPU is not available');
+    }
+
+    const batchSize = scalarWords.length / 8;
+    const bitset = await this.scanBatchBitset(scalarWords, prefixBytes, prefixNibbleLength);
+    return this.decodeMatchedIndexes(bitset, batchSize);
   }
 
   async warmup() {
@@ -604,7 +672,7 @@ export class WebGpuEd25519Scanner {
       return false;
     }
     const dummyScalars = new Uint32Array(this.workgroupSize * 8);
-    await this.scanBatchWithCurrentPipeline(dummyScalars, [0xa0], 1);
+    await this.scanBatchBitset(dummyScalars, [0xa0], 1);
     return true;
   }
 }

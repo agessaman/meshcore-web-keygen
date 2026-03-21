@@ -449,12 +449,11 @@ class MeshCoreKeyGenerator {
     const targetPrefix = this.currentTargetPrefix;
 
     if (this.webgpuScanner.initialized) {
-      const flags = await this.webgpuScanner.scanBatch(candidateBatch.scalarWords, prefixBytes, prefixLength);
-      for (let index = 0; index < flags.length; index += 1) {
-        if (flags[index] === 1) {
-          matchedIndexes.push(index);
-        }
-      }
+      matchedIndexes.push(...await this.webgpuScanner.scanBatchMatches(
+        candidateBatch.scalarWords,
+        prefixBytes,
+        prefixLength
+      ));
       return { matchedIndexes, candidateCount };
     }
 
