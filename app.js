@@ -1,7 +1,9 @@
-import * as nobleEd25519 from '../node_modules/@noble/ed25519/index.js';
+import * as nobleEd25519 from './noble-ed25519.js';
 
 console.log('Using Web Crypto API for MeshCore key generation');
 console.log('CPU cores available:', navigator.hardwareConcurrency || 'unknown');
+console.log('Web Crypto API available:', typeof crypto !== 'undefined');
+console.log('Subtle crypto available:', typeof crypto?.subtle !== 'undefined');
 
 const ED25519_ORDER = 0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3edn;
 
@@ -177,6 +179,7 @@ class MeshCoreKeyGenerator {
     for (let i = 0; i < this.maxHashWorkers; i += 1) {
       this.hashWorkers.push(new Worker(workerUrl));
     }
+    console.log(`Initialized ${this.hashWorkers.length} hash workers for candidate generation`);
   }
 
   async cleanup() {

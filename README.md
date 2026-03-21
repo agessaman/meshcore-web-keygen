@@ -16,10 +16,11 @@ Generates Ed25519 key pairs where the public key starts with a specific hex pref
 
 ## Usage
 
-1. Open `index.html` in a web browser
-2. Enter a hex prefix (e.g., "F8", "F8A1")
-3. Click "Generate Key"
-4. Download the JSON file when complete
+1. Run `npm run build`
+2. Open `index.html` in a web browser
+3. Enter a hex prefix (e.g., "F8", "F8A1")
+4. Click "Generate Key"
+5. Download the JSON file when complete
 
 ### URL Parameters
 
@@ -87,6 +88,14 @@ Filename: `meshcore_[PREFIX]_[TIMESTAMP].json`
 - All processing happens in your browser
 - No network requests during generation
 - Keys never leave your device
+
+## Build
+
+`npm run build` writes the browser-facing generated assets into the repo root, including:
+
+- `app.js`
+- `noble-ed25519.js`
+- `webgpu-ed25519.js`
 
 ## Advanced Usage
 

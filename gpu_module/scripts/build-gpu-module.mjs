@@ -6,7 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
 const tablePath = path.resolve(__dirname, '../src/webgpu-ed25519-table.js');
 const scannerPath = path.resolve(__dirname, '../src/webgpu-ed25519.js');
-const outPath = path.resolve(projectRoot, 'webgpu-ed25519-offline-simple.js');
+const outPath = path.resolve(projectRoot, 'webgpu-ed25519.js');
 
 function stripModuleSyntax(source) {
   return source
