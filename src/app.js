@@ -62,7 +62,22 @@ class MeshCoreKeyGenerator {
     this.webgpuScanner = new WebGpuEd25519Scanner();
     this.backendLabel = 'cpu';
     this.autotuned = false;
-    this.batchCandidates = [16384, 32768, 65536, 131072];
+    this.batchCandidates = [16384, 32768, 65536, 131072, 262144];
+    this.runtimeTuning = {
+      active: false,
+      stopped: false,
+      currentIndex: 0,
+      bestIndex: 0,
+      bestRate: 0,
+      maxIndex: 0,
+      batchesAtCurrent: 0,
+      warmupBatches: 4,
+      softBatchCeilingMs: 900,
+      exploreEveryBatches: 6,
+      minImprovementRatio: 1.03,
+      regressionRatio: 0.95,
+      stopReason: ''
+    };
   }
 
   async initialize() {
@@ -163,7 +178,104 @@ class MeshCoreKeyGenerator {
 
     this.batchSize = bestSize;
     this.autotuned = true;
-    this.backendLabel = `${this.backendLabel} | batch ${bestSize.toLocaleString()}`;
+    this.initializeRuntimeTuning(bestSize);
+    this.updateBackendLabel();
+  }
+
+  initializeRuntimeTuning(bestSize) {
+    const currentIndex = Math.max(0, this.batchCandidates.indexOf(bestSize));
+    this.runtimeTuning = {
+      ...this.runtimeTuning,
+      active: true,
+      stopped: false,
+      currentIndex,
+      bestIndex: currentIndex,
+      bestRate: 0,
+      maxIndex: this.batchCandidates.length - 1,
+      batchesAtCurrent: 0,
+      stopReason: ''
+    };
+  }
+
+  updateBackendLabel() {
+    const base = this.webgpuScanner.initialized
+      ? `webgpu + ${this.numWorkers} hash workers`
+      : `${this.numWorkers} cpu workers`;
+    const batchText = `batch ${this.batchSize.toLocaleString()}`;
+    const suffix = this.runtimeTuning.stopped && this.runtimeTuning.stopReason
+      ? ` | ${this.runtimeTuning.stopReason}`
+      : '';
+    this.backendLabel = `${base} | ${batchText}${suffix}`;
+  }
+
+  applyBatchSize(batchSize) {
+    this.batchSize = batchSize;
+    this.updateBackendLabel();
+  }
+
+  stopRuntimeTuning(reason) {
+    this.runtimeTuning.stopped = true;
+    this.runtimeTuning.active = false;
+    this.runtimeTuning.stopReason = reason;
+    this.applyBatchSize(this.batchCandidates[this.runtimeTuning.bestIndex]);
+  }
+
+  onRuntimeBatchFailure() {
+    if (!this.runtimeTuning.active || this.runtimeTuning.stopped) {
+      return;
+    }
+    this.runtimeTuning.maxIndex = Math.max(0, this.runtimeTuning.currentIndex - 1);
+    this.stopRuntimeTuning('dynamic tune capped');
+  }
+
+  maybeTuneDuringRun(batchElapsedMs, rate) {
+    if (!this.runtimeTuning.active || this.runtimeTuning.stopped || !this.webgpuScanner.initialized) {
+      return;
+    }
+
+    const state = this.runtimeTuning;
+    state.batchesAtCurrent += 1;
+
+    if (rate > state.bestRate) {
+      state.bestRate = rate;
+      state.bestIndex = state.currentIndex;
+    }
+
+    if (batchElapsedMs >= state.softBatchCeilingMs) {
+      state.maxIndex = Math.max(0, state.currentIndex - 1);
+      this.stopRuntimeTuning('dynamic tune capped');
+      return;
+    }
+
+    if (state.batchesAtCurrent < state.warmupBatches) {
+      return;
+    }
+
+    if (state.currentIndex > state.bestIndex && rate < state.bestRate * state.regressionRatio) {
+      state.maxIndex = Math.max(state.bestIndex, state.currentIndex - 1);
+      this.stopRuntimeTuning('dynamic tune capped');
+      return;
+    }
+
+    if (state.batchesAtCurrent < state.exploreEveryBatches) {
+      return;
+    }
+
+    state.batchesAtCurrent = 0;
+
+    const nextIndex = state.currentIndex + 1;
+    if (nextIndex > state.maxIndex || nextIndex >= this.batchCandidates.length) {
+      this.stopRuntimeTuning('dynamic tune settled');
+      return;
+    }
+
+    if (state.bestRate > 0 && rate < state.bestRate * state.minImprovementRatio && state.currentIndex >= state.bestIndex) {
+      this.stopRuntimeTuning('dynamic tune settled');
+      return;
+    }
+
+    state.currentIndex = nextIndex;
+    this.applyBatchSize(this.batchCandidates[nextIndex]);
   }
 
   async validateKeypair(privateKeyHex, publicKeyHex) {
@@ -354,9 +466,20 @@ class MeshCoreKeyGenerator {
     try {
       let nextBatchPromise = this.generateCandidateBatch();
       while (this.isRunning) {
-        const candidateBatch = await nextBatchPromise;
+        const batchStart = performance.now();
+        let candidateBatch;
+        try {
+          candidateBatch = await nextBatchPromise;
+        } catch (error) {
+          this.onRuntimeBatchFailure();
+          nextBatchPromise = this.generateCandidateBatch();
+          continue;
+        }
         nextBatchPromise = this.generateCandidateBatch();
         const { matchedIndexes, candidateCount } = await this.getMatchedIndexes(candidateBatch, prefixBytes, prefixLength);
+        const batchElapsedMs = performance.now() - batchStart;
+        const batchRate = candidateCount / (batchElapsedMs / 1000);
+        this.maybeTuneDuringRun(batchElapsedMs, batchRate);
 
         this.attempts += candidateCount;
 
