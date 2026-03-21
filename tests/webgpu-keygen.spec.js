@@ -5,7 +5,8 @@ test('WebGPU flags agree with CPU derivation on a sampled batch', async ({ page 
   const result = await page.evaluate(async () => {
     const { keyGenerator } = window.__meshcoreKeygen;
     await keyGenerator.initialize();
-    if (!keyGenerator.webgpuScanner.initialized) {
+    const gpuReady = await keyGenerator.setGpuAcceleration(true);
+    if (!gpuReady || !keyGenerator.webgpuScanner?.initialized) {
       return { skipped: true };
     }
 

@@ -541,6 +541,16 @@
                     </div>
                 </div>
 
+                <div class="form-group" id="gpuToggleContainer" hidden>
+                    <label style="display: flex; align-items: center; gap: 10px; font-size: 1rem;">
+                        <input type="checkbox" id="gpuAccelerationToggle" style="width: auto;">
+                        Enable GPU Acceleration
+                    </label>
+                    <small id="gpuAccelerationHint" style="color: #7f8c8d; margin-top: 6px; display: block;">
+                        GPU acceleration available.
+                    </small>
+                </div>
+
                 <div class="button-group">
                     <button type="submit" class="btn btn-primary" id="generateBtn">
                         Generate Key
@@ -614,6 +624,7 @@
         </a>
     </div>
 
+    <script src="./webgpu-ed25519-offline-simple.js"></script>
     <script type="module" src="./src/app.js"></script>
     <script type="application/ignored">
         // Web Crypto API Ed25519 implementation

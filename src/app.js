@@ -1,5 +1,4 @@
 import * as nobleEd25519 from '../node_modules/@noble/ed25519/index.js';
-import { WebGpuEd25519Scanner } from './webgpu-ed25519.js';
 
 console.log('Using Web Crypto API for MeshCore key generation');
 console.log('CPU cores available:', navigator.hardwareConcurrency || 'unknown');
@@ -56,7 +55,12 @@ class MeshCoreKeyGenerator {
     this.activeHashWorkers = Math.min(6, this.maxHashWorkers);
     this.batchSize = 131072;
     this.initialized = false;
-    this.webgpuScanner = new WebGpuEd25519Scanner();
+    this.gpuModule = globalThis.MeshCoreGpuModule ?? null;
+    this.webgpuScanner = null;
+    this.gpuSupportChecked = false;
+    this.gpuAvailable = false;
+    this.gpuPrepared = false;
+    this.useGpuAcceleration = false;
     this.backendLabel = 'cpu';
     this.autotuned = false;
     this.batchCandidates = [131072, 262144];
@@ -84,22 +88,78 @@ class MeshCoreKeyGenerator {
       return;
     }
 
-    const gpuReady = await this.webgpuScanner.initialize();
-    if (gpuReady) {
-      await this.webgpuScanner.autotuneWorkgroupSize(this.batchSize);
-      await this.webgpuScanner.warmup();
-      this.backendLabel = `webgpu + ${this.activeHashWorkers} hash workers`;
-    } else {
-      this.backendLabel = `${this.activeHashWorkers} cpu workers`;
+    await this.initializeHashWorkers();
+    await this.detectGpuSupport();
+    this.updateBackendLabel();
+    this.initialized = true;
+  }
+
+  async detectGpuSupport() {
+    this.gpuModule = globalThis.MeshCoreGpuModule ?? this.gpuModule;
+
+    if (this.gpuAvailable && this.webgpuScanner?.initialized) {
+      this.gpuSupportChecked = true;
+      return true;
     }
 
-    await this.initializeHashWorkers();
-    if (this.webgpuScanner.initialized) {
-      this.autotuned = true;
-      this.initializeRuntimeTuning(this.batchSize);
-      this.updateBackendLabel();
+    if (this.gpuSupportChecked && this.gpuAvailable) {
+      return this.gpuAvailable;
     }
-    this.initialized = true;
+
+    if (!this.gpuModule?.isUsableWebGpuModule?.()) {
+      this.gpuSupportChecked = false;
+      this.gpuAvailable = false;
+      this.webgpuScanner = null;
+      return false;
+    }
+
+    const scanner = new this.gpuModule.WebGpuEd25519Scanner();
+    const ready = await scanner.initialize();
+    if (!ready) {
+      this.gpuSupportChecked = false;
+      this.gpuAvailable = false;
+      this.webgpuScanner = null;
+      return false;
+    }
+
+    this.webgpuScanner = scanner;
+    this.gpuSupportChecked = true;
+    this.gpuAvailable = true;
+    return true;
+  }
+
+  async prepareGpuAcceleration() {
+    if (this.gpuPrepared) {
+      return true;
+    }
+
+    const available = await this.detectGpuSupport();
+    if (!available || !this.webgpuScanner) {
+      this.useGpuAcceleration = false;
+      this.updateBackendLabel();
+      return false;
+    }
+
+    await this.webgpuScanner.autotuneWorkgroupSize(this.batchSize);
+    await this.webgpuScanner.warmup();
+    this.autotuned = true;
+    this.initializeRuntimeTuning(this.batchSize);
+    this.gpuPrepared = true;
+    return true;
+  }
+
+  async setGpuAcceleration(enabled) {
+    if (!enabled) {
+      this.useGpuAcceleration = false;
+      this.runtimeTuning.active = false;
+      this.updateBackendLabel();
+      return false;
+    }
+
+    const ready = await this.prepareGpuAcceleration();
+    this.useGpuAcceleration = ready;
+    this.updateBackendLabel();
+    return ready;
   }
 
   async initializeHashWorkers() {
@@ -205,7 +265,7 @@ class MeshCoreKeyGenerator {
   }
 
   async autotuneBatchSize() {
-    if (this.autotuned || !this.webgpuScanner.initialized) {
+    if (this.autotuned || !this.useGpuAcceleration || !this.webgpuScanner?.initialized) {
       return;
     }
 
@@ -246,7 +306,7 @@ class MeshCoreKeyGenerator {
   }
 
   updateBackendLabel() {
-    const base = this.webgpuScanner.initialized
+    const base = this.useGpuAcceleration && this.webgpuScanner?.initialized
       ? `webgpu + ${this.activeHashWorkers} hash workers | wg ${this.webgpuScanner.workgroupSize}`
       : `${this.activeHashWorkers} cpu workers`;
     const batchText = `batch ${this.batchSize.toLocaleString()}`;
@@ -277,7 +337,7 @@ class MeshCoreKeyGenerator {
   }
 
   maybeTuneDuringRun(batchElapsedMs, rate, elapsedRunMs) {
-    if (!this.runtimeTuning.active || this.runtimeTuning.stopped || !this.webgpuScanner.initialized) {
+    if (!this.runtimeTuning.active || this.runtimeTuning.stopped || !this.useGpuAcceleration || !this.webgpuScanner?.initialized) {
       return;
     }
 
@@ -448,7 +508,7 @@ class MeshCoreKeyGenerator {
     const matchedIndexes = [];
     const targetPrefix = this.currentTargetPrefix;
 
-    if (this.webgpuScanner.initialized) {
+    if (this.useGpuAcceleration && this.webgpuScanner?.initialized) {
       matchedIndexes.push(...await this.webgpuScanner.scanBatchMatches(
         candidateBatch.scalarWords,
         prefixBytes,
@@ -582,6 +642,9 @@ const form = document.getElementById('keygenForm');
 const targetPrefixInput = document.getElementById('targetPrefix');
 const generateBtn = document.getElementById('generateBtn');
 const stopBtn = document.getElementById('stopBtn');
+const gpuToggleContainer = document.getElementById('gpuToggleContainer');
+const gpuAccelerationToggle = document.getElementById('gpuAccelerationToggle');
+const gpuAccelerationHint = document.getElementById('gpuAccelerationHint');
 const progressContainer = document.getElementById('progressContainer');
 const resultContainer = document.getElementById('resultContainer');
 const errorContainer = document.getElementById('errorContainer');
@@ -703,6 +766,23 @@ function hideError() {
   errorContainer.style.display = 'none';
 }
 
+async function initializeGpuOption() {
+  let available = await keyGenerator.detectGpuSupport();
+  if (!available) {
+    await new Promise((resolve) => window.setTimeout(resolve, 150));
+    available = await keyGenerator.detectGpuSupport();
+  }
+
+  if (!available) {
+    gpuToggleContainer.hidden = true;
+    return;
+  }
+
+  gpuToggleContainer.hidden = false;
+  gpuAccelerationToggle.checked = false;
+  gpuAccelerationHint.textContent = 'GPU acceleration available. CPU mode remains the default.';
+}
+
 function displayResult(result) {
   document.getElementById('publicKey').textContent = result.publicKey;
   document.getElementById('privateKey').textContent = result.privateKey;
@@ -772,12 +852,20 @@ form.addEventListener('submit', async (event) => {
   progressContainer.style.display = 'block';
   generateBtn.disabled = true;
   stopBtn.disabled = false;
+  gpuAccelerationToggle.disabled = true;
   stopBtn.textContent = 'Stop';
   stopBtn.className = 'btn btn-secondary';
-  document.getElementById('progressText').textContent = 'Initializing WebGPU and hash workers...';
+  document.getElementById('progressText').textContent = gpuAccelerationToggle.checked
+    ? 'Initializing GPU acceleration and hash workers...'
+    : 'Initializing CPU workers...';
 
   try {
     await keyGenerator.initialize();
+    const gpuEnabled = await keyGenerator.setGpuAcceleration(gpuAccelerationToggle.checked);
+    if (gpuAccelerationToggle.checked && !gpuEnabled) {
+      gpuAccelerationToggle.checked = false;
+      gpuAccelerationHint.textContent = 'GPU acceleration is not available in this browser session. Continuing on CPU.';
+    }
     const result = await keyGenerator.generateVanityKey(targetPrefix, targetPrefix.length);
     if (result) {
       displayResult(result);
@@ -791,6 +879,7 @@ form.addEventListener('submit', async (event) => {
     progressContainer.style.display = 'none';
     generateBtn.disabled = false;
     stopBtn.disabled = false;
+    gpuAccelerationToggle.disabled = false;
     stopBtn.textContent = 'Generate Another';
     stopBtn.className = 'btn btn-secondary';
   }
@@ -860,3 +949,9 @@ targetPrefixInput.focus();
 if (urlParams.get('autostart') === '1' && targetPrefixInput.value) {
   queueMicrotask(() => form.dispatchEvent(new Event('submit')));
 }
+
+window.addEventListener('load', () => {
+  initializeGpuOption().catch((error) => {
+    console.warn('GPU availability check failed:', error);
+  });
+}, { once: true });
