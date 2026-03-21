@@ -53,7 +53,10 @@ class MeshCoreKeyGenerator {
     this.hashWorkers = [];
     this.maxHashWorkers = Math.max(1, navigator.hardwareConcurrency || 4);
     this.activeHashWorkers = Math.min(6, this.maxHashWorkers);
-    this.batchSize = 131072;
+    this.gpuBatchSize = 131072;
+    this.cpuBatchSize = Math.max(4096, this.activeHashWorkers * 512);
+    this.batchSize = this.cpuBatchSize;
+    this.cpuMatchChunkSize = 512;
     this.initialized = false;
     this.gpuModule = globalThis.MeshCoreGpuModule ?? null;
     this.webgpuScanner = null;
@@ -140,6 +143,7 @@ class MeshCoreKeyGenerator {
       return false;
     }
 
+    this.applyBatchSize(this.gpuBatchSize);
     await this.webgpuScanner.autotuneWorkgroupSize(this.batchSize);
     await this.webgpuScanner.warmup();
     this.autotuned = true;
@@ -151,8 +155,9 @@ class MeshCoreKeyGenerator {
   async setGpuAcceleration(enabled) {
     if (!enabled) {
       this.useGpuAcceleration = false;
-      this.runtimeTuning.active = false;
-      this.updateBackendLabel();
+      this.autotuned = false;
+      this.resetRuntimeTuning();
+      this.applyBatchSize(this.cpuBatchSize);
       return false;
     }
 
@@ -248,7 +253,7 @@ class MeshCoreKeyGenerator {
     let bestCount = this.activeHashWorkers;
     let bestRate = 0;
     const previousBatchSize = this.batchSize;
-    this.batchSize = 131072;
+    this.batchSize = this.gpuBatchSize;
 
     for (const count of candidates) {
       this.activeHashWorkers = count;
@@ -298,6 +303,20 @@ class MeshCoreKeyGenerator {
       stopped: false,
       currentIndex,
       bestIndex: currentIndex,
+      bestRate: 0,
+      maxIndex: this.batchCandidates.length - 1,
+      batchesAtCurrent: 0,
+      stopReason: ''
+    };
+  }
+
+  resetRuntimeTuning() {
+    this.runtimeTuning = {
+      ...this.runtimeTuning,
+      active: false,
+      stopped: false,
+      currentIndex: 0,
+      bestIndex: 0,
       bestRate: 0,
       maxIndex: this.batchCandidates.length - 1,
       batchesAtCurrent: 0,
@@ -517,11 +536,18 @@ class MeshCoreKeyGenerator {
       return { matchedIndexes, candidateCount };
     }
 
-    for (let index = 0; index < candidateCount; index += 1) {
-      const scalar = this.unpackScalarBytes(candidateBatch.scalarWords, index);
-      const publicKeyHex = this.toHex(this.derivePublicKeyBytes(scalar));
-      if (publicKeyHex.startsWith(targetPrefix) && !publicKeyHex.startsWith('00') && !publicKeyHex.startsWith('FF')) {
-        matchedIndexes.push(index);
+    for (let start = 0; start < candidateCount; start += this.cpuMatchChunkSize) {
+      const end = Math.min(candidateCount, start + this.cpuMatchChunkSize);
+      for (let index = start; index < end; index += 1) {
+        const scalar = this.unpackScalarBytes(candidateBatch.scalarWords, index);
+        const publicKeyHex = this.toHex(this.derivePublicKeyBytes(scalar));
+        if (publicKeyHex.startsWith(targetPrefix) && !publicKeyHex.startsWith('00') && !publicKeyHex.startsWith('FF')) {
+          matchedIndexes.push(index);
+        }
+      }
+
+      if (end < candidateCount) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
     }
     return { matchedIndexes, candidateCount };
