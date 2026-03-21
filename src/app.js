@@ -53,14 +53,14 @@ class MeshCoreKeyGenerator {
     this.difficultyUpdateInterval = null;
     this.hashWorkers = [];
     this.maxHashWorkers = Math.max(1, navigator.hardwareConcurrency || 4);
-    this.activeHashWorkers = Math.min(8, this.maxHashWorkers);
+    this.activeHashWorkers = Math.min(6, this.maxHashWorkers);
     this.batchSize = 131072;
     this.initialized = false;
     this.webgpuScanner = new WebGpuEd25519Scanner();
     this.backendLabel = 'cpu';
     this.autotuned = false;
     this.batchCandidates = [131072, 262144];
-    this.workerCandidates = [8, 10];
+    this.workerCandidates = [6, 8];
     this.runtimeTuning = {
       active: false,
       stopped: false,
