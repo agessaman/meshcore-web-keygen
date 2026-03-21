@@ -306,10 +306,10 @@ fn point_add_precomp(p: Point, window: u32, digit: u32) -> Point {
 }
 
 fn scalar_digit(candidateIndex: u32, window: u32) -> u32 {
-  let wordIndex = candidateIndex * 8u + (window / 8u);
+  let wordIndex = candidateIndex * 8u + (window / 4u);
   let word = scalars.words[wordIndex];
-  let shift = (window % 8u) * 4u;
-  return (word >> shift) & 15u;
+  let shift = (window % 4u) * 8u;
+  return (word >> shift) & 255u;
 }
 
 fn prefix_byte(slot: u32) -> u32 {

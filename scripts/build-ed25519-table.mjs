@@ -3,9 +3,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const WINDOW_BITS = 4n;
-const WINDOW_COUNT = 64;
-const POINTS_PER_WINDOW = 15;
+const WINDOW_BITS = 8n;
+const WINDOW_COUNT = 32;
+const POINTS_PER_WINDOW = 255;
 const LIMBS = 16;
 const D = 37095705934669439343138083508754565189542113879843219016388785533085940283555n;
 const P = (1n << 255n) - 19n;
