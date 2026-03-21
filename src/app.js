@@ -1,5 +1,5 @@
 import * as nobleEd25519 from '../node_modules/@noble/ed25519/index.js';
-import { WebGpuEd25519Scanner, packScalarBytesToWords } from './webgpu-ed25519.js';
+import { WebGpuEd25519Scanner } from './webgpu-ed25519.js';
 
 console.log('Using Web Crypto API for MeshCore key generation');
 console.log('CPU cores available:', navigator.hardwareConcurrency || 'unknown');
@@ -14,6 +14,7 @@ self.onmessage = async (event) => {
   }
 
   const scalars = new Uint8Array(batchSize * 32);
+  const scalarWords = new Uint32Array(batchSize * 8);
   const suffixes = new Uint8Array(batchSize * 32);
 
   for (let index = 0; index < batchSize; index += 1) {
@@ -28,12 +29,21 @@ self.onmessage = async (event) => {
     clamped[31] |= 64;
 
     scalars.set(clamped, scalarOffset);
+    const wordOffset = index * 8;
+    for (let word = 0; word < 8; word += 1) {
+      const byteOffset = scalarOffset + word * 4;
+      scalarWords[wordOffset + word] =
+        clamped[byteOffset - scalarOffset]
+        | (clamped[byteOffset - scalarOffset + 1] << 8)
+        | (clamped[byteOffset - scalarOffset + 2] << 16)
+        | (clamped[byteOffset - scalarOffset + 3] << 24);
+    }
     suffixes.set(digest.slice(32, 64), suffixOffset);
   }
 
   self.postMessage(
-    { type: 'results', scalars: scalars.buffer, suffixes: suffixes.buffer },
-    [scalars.buffer, suffixes.buffer]
+    { type: 'results', scalars: scalars.buffer, scalarWords: scalarWords.buffer, suffixes: suffixes.buffer },
+    [scalars.buffer, scalarWords.buffer, suffixes.buffer]
   );
 };
 `;
@@ -47,10 +57,12 @@ class MeshCoreKeyGenerator {
     this.difficultyUpdateInterval = null;
     this.hashWorkers = [];
     this.numWorkers = Math.max(1, navigator.hardwareConcurrency || 4);
-    this.batchSize = Math.max(1024, this.numWorkers * 512);
+    this.batchSize = Math.max(8192, this.numWorkers * 1024);
     this.initialized = false;
     this.webgpuScanner = new WebGpuEd25519Scanner();
     this.backendLabel = 'cpu';
+    this.autotuned = false;
+    this.batchCandidates = [16384, 32768, 65536, 131072];
   }
 
   async initialize() {
@@ -67,6 +79,9 @@ class MeshCoreKeyGenerator {
     }
 
     await this.initializeHashWorkers();
+    if (this.webgpuScanner.initialized) {
+      await this.autotuneBatchSize();
+    }
     this.initialized = true;
   }
 
@@ -116,6 +131,39 @@ class MeshCoreKeyGenerator {
       throw new Error('Derived scalar reduced to zero');
     }
     return nobleEd25519.Point.BASE.multiply(scalar).toBytes();
+  }
+
+  selectBatchCandidates() {
+    return this.batchCandidates.filter((size) => size >= this.numWorkers * 256);
+  }
+
+  async autotuneBatchSize() {
+    if (this.autotuned || !this.webgpuScanner.initialized) {
+      return;
+    }
+
+    const candidates = this.selectBatchCandidates();
+    let bestSize = this.batchSize;
+    let bestRate = 0;
+
+    for (const size of candidates) {
+      const previous = this.batchSize;
+      this.batchSize = size;
+      const start = performance.now();
+      const batch = await this.generateCandidateBatch();
+      await this.webgpuScanner.scanBatch(batch.scalarWords, [0xa0], 1);
+      const elapsed = performance.now() - start;
+      const rate = size / (elapsed / 1000);
+      if (rate > bestRate) {
+        bestRate = rate;
+        bestSize = size;
+      }
+      this.batchSize = previous;
+    }
+
+    this.batchSize = bestSize;
+    this.autotuned = true;
+    this.backendLabel = `${this.backendLabel} | batch ${bestSize.toLocaleString()}`;
   }
 
   async validateKeypair(privateKeyHex, publicKeyHex) {
@@ -172,6 +220,7 @@ class MeshCoreKeyGenerator {
           worker.removeEventListener('error', onError);
           resolve({
             scalars: new Uint8Array(event.data.scalars),
+            scalarWords: new Uint32Array(event.data.scalarWords),
             suffixes: new Uint8Array(event.data.suffixes)
           });
         };
@@ -190,22 +239,27 @@ class MeshCoreKeyGenerator {
     );
 
     const scalars = new Uint8Array(batches.reduce((sum, batch) => sum + batch.scalars.length, 0));
+    const scalarWords = new Uint32Array(batches.reduce((sum, batch) => sum + batch.scalarWords.length, 0));
     const suffixes = new Uint8Array(batches.reduce((sum, batch) => sum + batch.suffixes.length, 0));
 
     let scalarOffset = 0;
+    let scalarWordOffset = 0;
     let suffixOffset = 0;
     for (const batch of batches) {
       scalars.set(batch.scalars, scalarOffset);
+      scalarWords.set(batch.scalarWords, scalarWordOffset);
       suffixes.set(batch.suffixes, suffixOffset);
       scalarOffset += batch.scalars.length;
+      scalarWordOffset += batch.scalarWords.length;
       suffixOffset += batch.suffixes.length;
     }
 
-    return { scalars, suffixes };
+    return { scalars, scalarWords, suffixes };
   }
 
   async generateCandidateBatchSingle() {
     const scalars = new Uint8Array(this.batchSize * 32);
+    const scalarWords = new Uint32Array(this.batchSize * 8);
     const suffixes = new Uint8Array(this.batchSize * 32);
     for (let index = 0; index < this.batchSize; index += 1) {
       const seed = crypto.getRandomValues(new Uint8Array(32));
@@ -217,9 +271,43 @@ class MeshCoreKeyGenerator {
       clamped[31] &= 63;
       clamped[31] |= 64;
       scalars.set(clamped, scalarOffset);
+      const wordOffset = index * 8;
+      scalarWords[wordOffset] = clamped[0] | (clamped[1] << 8) | (clamped[2] << 16) | (clamped[3] << 24);
+      scalarWords[wordOffset + 1] = clamped[4] | (clamped[5] << 8) | (clamped[6] << 16) | (clamped[7] << 24);
+      scalarWords[wordOffset + 2] = clamped[8] | (clamped[9] << 8) | (clamped[10] << 16) | (clamped[11] << 24);
+      scalarWords[wordOffset + 3] = clamped[12] | (clamped[13] << 8) | (clamped[14] << 16) | (clamped[15] << 24);
+      scalarWords[wordOffset + 4] = clamped[16] | (clamped[17] << 8) | (clamped[18] << 16) | (clamped[19] << 24);
+      scalarWords[wordOffset + 5] = clamped[20] | (clamped[21] << 8) | (clamped[22] << 16) | (clamped[23] << 24);
+      scalarWords[wordOffset + 6] = clamped[24] | (clamped[25] << 8) | (clamped[26] << 16) | (clamped[27] << 24);
+      scalarWords[wordOffset + 7] = clamped[28] | (clamped[29] << 8) | (clamped[30] << 16) | (clamped[31] << 24);
       suffixes.set(digest.slice(32, 64), suffixOffset);
     }
-    return { scalars, suffixes };
+    return { scalars, scalarWords, suffixes };
+  }
+
+  async getMatchedIndexes(candidateBatch, prefixBytes, prefixLength) {
+    const candidateCount = candidateBatch.scalars.length / 32;
+    const matchedIndexes = [];
+    const targetPrefix = this.currentTargetPrefix;
+
+    if (this.webgpuScanner.initialized) {
+      const flags = await this.webgpuScanner.scanBatch(candidateBatch.scalarWords, prefixBytes, prefixLength);
+      for (let index = 0; index < flags.length; index += 1) {
+        if (flags[index] === 1) {
+          matchedIndexes.push(index);
+        }
+      }
+      return { matchedIndexes, candidateCount };
+    }
+
+    for (let index = 0; index < candidateCount; index += 1) {
+      const scalar = candidateBatch.scalars.slice(index * 32, (index + 1) * 32);
+      const publicKeyHex = this.toHex(this.derivePublicKeyBytes(scalar));
+      if (publicKeyHex.startsWith(targetPrefix) && !publicKeyHex.startsWith('00') && !publicKeyHex.startsWith('FF')) {
+        matchedIndexes.push(index);
+      }
+    }
+    return { matchedIndexes, candidateCount };
   }
 
   async generateVanityKey(targetPrefix, prefixLength) {
@@ -264,31 +352,11 @@ class MeshCoreKeyGenerator {
     const prefixBytes = this.prefixToBytes(targetPrefix);
 
     try {
+      let nextBatchPromise = this.generateCandidateBatch();
       while (this.isRunning) {
-        const candidateBatch = await this.generateCandidateBatch();
-        const candidateCount = candidateBatch.scalars.length / 32;
-        let matchedIndexes = [];
-
-        if (this.webgpuScanner.initialized) {
-          const flags = await this.webgpuScanner.scanBatch(
-            packScalarBytesToWords(candidateBatch.scalars),
-            prefixBytes,
-            prefixLength
-          );
-          for (let index = 0; index < flags.length; index += 1) {
-            if (flags[index] === 1) {
-              matchedIndexes.push(index);
-            }
-          }
-        } else {
-          for (let index = 0; index < candidateCount; index += 1) {
-            const scalar = candidateBatch.scalars.slice(index * 32, (index + 1) * 32);
-            const publicKeyHex = this.toHex(this.derivePublicKeyBytes(scalar));
-            if (publicKeyHex.startsWith(targetPrefix) && !publicKeyHex.startsWith('00') && !publicKeyHex.startsWith('FF')) {
-              matchedIndexes.push(index);
-            }
-          }
-        }
+        const candidateBatch = await nextBatchPromise;
+        nextBatchPromise = this.generateCandidateBatch();
+        const { matchedIndexes, candidateCount } = await this.getMatchedIndexes(candidateBatch, prefixBytes, prefixLength);
 
         this.attempts += candidateCount;
 
