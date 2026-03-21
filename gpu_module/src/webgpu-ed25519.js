@@ -402,6 +402,7 @@ export class WebGpuEd25519Scanner {
     this.supportedWorkgroupSizes = [];
     this.pipelineCache = new Map();
     this.zeroFlags = new Uint32Array(0);
+    this.pendingScan = Promise.resolve();
   }
 
   async initialize() {
@@ -537,37 +538,43 @@ export class WebGpuEd25519Scanner {
   }
 
   async scanBatchBitset(scalarWords, prefixBytes, prefixNibbleLength) {
-    const batchSize = scalarWords.length / 8;
-    this.ensureCapacity(batchSize);
-    const flagsWordLength = Math.ceil(batchSize / 32);
+    const runScan = async () => {
+      const batchSize = scalarWords.length / 8;
+      this.ensureCapacity(batchSize);
+      const flagsWordLength = Math.ceil(batchSize / 32);
 
-    const params = new Uint32Array([
-      batchSize,
-      prefixNibbleLength,
-      prefixBytes[0] ?? 0,
-      prefixBytes[1] ?? 0,
-      prefixBytes[2] ?? 0,
-      prefixBytes[3] ?? 0
-    ]);
+      const params = new Uint32Array([
+        batchSize,
+        prefixNibbleLength,
+        prefixBytes[0] ?? 0,
+        prefixBytes[1] ?? 0,
+        prefixBytes[2] ?? 0,
+        prefixBytes[3] ?? 0
+      ]);
 
-    this.device.queue.writeBuffer(this.scalarBuffer, 0, scalarWords);
-    this.device.queue.writeBuffer(this.paramsBuffer, 0, params);
-    this.device.queue.writeBuffer(this.flagsBuffer, 0, this.zeroFlags.subarray(0, flagsWordLength));
+      this.device.queue.writeBuffer(this.scalarBuffer, 0, scalarWords);
+      this.device.queue.writeBuffer(this.paramsBuffer, 0, params);
+      this.device.queue.writeBuffer(this.flagsBuffer, 0, this.zeroFlags.subarray(0, flagsWordLength));
 
-    const encoder = this.device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, this.createBindGroup());
-    pass.dispatchWorkgroups(Math.ceil(batchSize / this.workgroupSize));
-    pass.end();
+      const encoder = this.device.createCommandEncoder();
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(this.pipeline);
+      pass.setBindGroup(0, this.createBindGroup());
+      pass.dispatchWorkgroups(Math.ceil(batchSize / this.workgroupSize));
+      pass.end();
 
-    encoder.copyBufferToBuffer(this.flagsBuffer, 0, this.readBuffer, 0, flagsWordLength * Uint32Array.BYTES_PER_ELEMENT);
-    this.device.queue.submit([encoder.finish()]);
+      encoder.copyBufferToBuffer(this.flagsBuffer, 0, this.readBuffer, 0, flagsWordLength * Uint32Array.BYTES_PER_ELEMENT);
+      this.device.queue.submit([encoder.finish()]);
 
-    await this.readBuffer.mapAsync(GPUMapMode.READ, 0, flagsWordLength * Uint32Array.BYTES_PER_ELEMENT);
-    const copy = new Uint32Array(this.readBuffer.getMappedRange(0, flagsWordLength * Uint32Array.BYTES_PER_ELEMENT)).slice();
-    this.readBuffer.unmap();
-    return copy;
+      await this.readBuffer.mapAsync(GPUMapMode.READ, 0, flagsWordLength * Uint32Array.BYTES_PER_ELEMENT);
+      const copy = new Uint32Array(this.readBuffer.getMappedRange(0, flagsWordLength * Uint32Array.BYTES_PER_ELEMENT)).slice();
+      this.readBuffer.unmap();
+      return copy;
+    };
+
+    const nextScan = this.pendingScan.then(runScan, runScan);
+    this.pendingScan = nextScan.then(() => undefined, () => undefined);
+    return nextScan;
   }
 
   expandBitsetToFlags(bitset, batchSize) {

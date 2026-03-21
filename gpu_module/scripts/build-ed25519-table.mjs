@@ -25,9 +25,10 @@ function toU16Limbs(value) {
 }
 
 function pushPointWords(target, point) {
-  const yPlusX = (point.Y + point.X) % P;
-  const yMinusX = (point.Y - point.X + P) % P;
-  const xy2d = (2n * D * point.X * point.Y) % P;
+  const { x, y } = point.toAffine();
+  const yPlusX = (y + x) % P;
+  const yMinusX = (y - x + P) % P;
+  const xy2d = (2n * D * x * y) % P;
   target.push(...toU16Limbs(yPlusX));
   target.push(...toU16Limbs(yMinusX));
   target.push(...toU16Limbs(xy2d));
