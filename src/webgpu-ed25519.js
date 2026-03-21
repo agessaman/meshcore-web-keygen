@@ -1,8 +1,11 @@
-import { PRECOMP_WORDS } from './webgpu-ed25519-table.js';
+import { POINTS_PER_WINDOW, PRECOMP_WORDS, WINDOW_COUNT } from './webgpu-ed25519-table.js';
 
-const WORKGROUP_SIZE = 64;
+const WORKGROUP_CANDIDATES = [64, 128, 256];
+const WINDOW_COUNT_U32 = `${WINDOW_COUNT}u`;
+const POINTS_PER_WINDOW_U32 = `${POINTS_PER_WINDOW}u`;
 
-const shaderSource = /* wgsl */ `
+function createShaderSource(workgroupSize) {
+  return /* wgsl */ `
 struct Scalars {
   words: array<u32>,
 }
@@ -31,7 +34,8 @@ struct Flags {
 
 const LIMBS: u32 = 16u;
 const WORDS_PER_POINT: u32 = 48u;
-const WINDOW_COUNT: u32 = 64u;
+const WINDOW_COUNT: u32 = ${WINDOW_COUNT_U32};
+const POINTS_PER_WINDOW: u32 = ${POINTS_PER_WINDOW_U32};
 const FE_P: array<u32, 16> = array<u32, 16>(
   65517u, 65535u, 65535u, 65535u, 65535u, 65535u, 65535u, 65535u,
   65535u, 65535u, 65535u, 65535u, 65535u, 65535u, 65535u, 32767u
@@ -193,7 +197,54 @@ fn fe_mul(a: array<u32, 16>, b: array<u32, 16>) -> array<u32, 16> {
 }
 
 fn fe_square(a: array<u32, 16>) -> array<u32, 16> {
-  return fe_mul(a, a);
+  var accLow: array<u32, 32>;
+  var accHigh: array<u32, 32>;
+
+  for (var i: u32 = 0u; i < 16u; i = i + 1u) {
+    let squareIdx = i + i;
+    let squareProduct = a[i] * a[i];
+    var squareNext = accLow[squareIdx] + squareProduct;
+    if (squareNext < accLow[squareIdx]) {
+      accHigh[squareIdx] = accHigh[squareIdx] + 1u;
+    }
+    accLow[squareIdx] = squareNext;
+
+    for (var j: u32 = i + 1u; j < 16u; j = j + 1u) {
+      let idx = i + j;
+      let product = a[i] * a[j];
+      let doubledLow = product << 1u;
+      let doubledHigh = product >> 31u;
+      var next = accLow[idx] + doubledLow;
+      var high = accHigh[idx] + doubledHigh;
+      if (next < accLow[idx]) {
+        high = high + 1u;
+      }
+      accLow[idx] = next;
+      accHigh[idx] = high;
+    }
+  }
+
+  var limbs: array<u32, 32>;
+  var carry: u32 = 0u;
+  for (var i: u32 = 0u; i < 32u; i = i + 1u) {
+    var high = accHigh[i];
+    let total = accLow[i] + carry;
+    if (total < carry) {
+      high = high + 1u;
+    }
+    limbs[i] = total & 65535u;
+    carry = (total >> 16u) + (high << 16u);
+  }
+
+  for (var i: u32 = 16u; i < 32u; i = i + 1u) {
+    limbs[i - 16u] = limbs[i - 16u] + limbs[i] * 38u;
+  }
+
+  var out: array<u32, 16>;
+  for (var i: u32 = 0u; i < 16u; i = i + 1u) {
+    out[i] = limbs[i];
+  }
+  return fe_finalize(out);
 }
 
 fn fe_pow_p_minus_2(z: array<u32, 16>) -> array<u32, 16> {
@@ -229,7 +280,7 @@ fn point_add_precomp(p: Point, window: u32, digit: u32) -> Point {
     return p;
   }
 
-  let pointIndex = window * 15u + (digit - 1u);
+  let pointIndex = window * POINTS_PER_WINDOW + (digit - 1u);
   let base = pointIndex * WORDS_PER_POINT;
   let yPlusX = load_coord(base);
   let yMinusX = load_coord(base + 16u);
@@ -304,7 +355,7 @@ fn matches_prefix(y: array<u32, 16>) -> bool {
   return true;
 }
 
-@compute @workgroup_size(${WORKGROUP_SIZE})
+@compute @workgroup_size(${workgroupSize})
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let index = gid.x;
   if (index >= params.batchSize) {
@@ -321,6 +372,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   flags.values[index] = select(0u, 1u, matches_prefix(y));
 }
 `;
+}
 
 export class WebGpuEd25519Scanner {
   constructor() {
@@ -333,9 +385,13 @@ export class WebGpuEd25519Scanner {
     this.scalarBuffer = null;
     this.flagsBuffer = null;
     this.readBuffer = null;
+    this.bindGroup = null;
     this.capacity = 0;
     this.initialized = false;
     this.backend = 'cpu';
+    this.workgroupSize = 64;
+    this.supportedWorkgroupSizes = [];
+    this.pipelineCache = new Map();
   }
 
   async initialize() {
@@ -364,8 +420,8 @@ export class WebGpuEd25519Scanner {
       return false;
     }
     this.backend = this.adapter.info?.description || 'webgpu';
+    this.supportedWorkgroupSizes = this.getSupportedWorkgroupSizes();
 
-    const module = this.device.createShaderModule({ code: shaderSource });
     this.bindGroupLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
@@ -375,10 +431,7 @@ export class WebGpuEd25519Scanner {
       ]
     });
 
-    this.pipeline = this.device.createComputePipeline({
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
-      compute: { module, entryPoint: 'main' }
-    });
+    this.setWorkgroupSize(this.supportedWorkgroupSizes[0] ?? this.workgroupSize);
 
     this.tableBuffer = this.device.createBuffer({
       size: Uint32Array.BYTES_PER_ELEMENT * PRECOMP_WORDS.length,
@@ -397,16 +450,42 @@ export class WebGpuEd25519Scanner {
     return true;
   }
 
+  getSupportedWorkgroupSizes() {
+    const maxX = this.device.limits.maxComputeWorkgroupSizeX;
+    const maxInvocations = this.device.limits.maxComputeInvocationsPerWorkgroup;
+    return WORKGROUP_CANDIDATES.filter((size) => size <= maxX && size <= maxInvocations);
+  }
+
+  setWorkgroupSize(size) {
+    if (this.workgroupSize === size && this.pipeline) {
+      return;
+    }
+
+    let pipeline = this.pipelineCache.get(size);
+    if (!pipeline) {
+      const module = this.device.createShaderModule({ code: createShaderSource(size) });
+      pipeline = this.device.createComputePipeline({
+        layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.bindGroupLayout] }),
+        compute: { module, entryPoint: 'main' }
+      });
+      this.pipelineCache.set(size, pipeline);
+    }
+
+    this.workgroupSize = size;
+    this.pipeline = pipeline;
+  }
+
   ensureCapacity(batchSize) {
     if (batchSize <= this.capacity) {
       return;
     }
 
-    const nextCapacity = Math.max(batchSize, WORKGROUP_SIZE);
+    const nextCapacity = Math.max(batchSize, this.workgroupSize);
 
     this.scalarBuffer?.destroy();
     this.flagsBuffer?.destroy();
     this.readBuffer?.destroy();
+    this.bindGroup = null;
 
     this.scalarBuffer = this.device.createBuffer({
       size: nextCapacity * 8 * Uint32Array.BYTES_PER_ELEMENT,
@@ -427,7 +506,11 @@ export class WebGpuEd25519Scanner {
   }
 
   createBindGroup() {
-    return this.device.createBindGroup({
+    if (this.bindGroup) {
+      return this.bindGroup;
+    }
+
+    this.bindGroup = this.device.createBindGroup({
       layout: this.bindGroupLayout,
       entries: [
         { binding: 0, resource: { buffer: this.scalarBuffer } },
@@ -436,14 +519,11 @@ export class WebGpuEd25519Scanner {
         { binding: 3, resource: { buffer: this.flagsBuffer } }
       ]
     });
+
+    return this.bindGroup;
   }
 
-  async scanBatch(scalarWords, prefixBytes, prefixNibbleLength) {
-    await this.initialize();
-    if (!this.initialized) {
-      throw new Error('WebGPU is not available');
-    }
-
+  async scanBatchWithCurrentPipeline(scalarWords, prefixBytes, prefixNibbleLength) {
     const batchSize = scalarWords.length / 8;
     this.ensureCapacity(batchSize);
 
@@ -463,7 +543,7 @@ export class WebGpuEd25519Scanner {
     const pass = encoder.beginComputePass();
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.createBindGroup());
-    pass.dispatchWorkgroups(Math.ceil(batchSize / WORKGROUP_SIZE));
+    pass.dispatchWorkgroups(Math.ceil(batchSize / this.workgroupSize));
     pass.end();
 
     encoder.copyBufferToBuffer(this.flagsBuffer, 0, this.readBuffer, 0, batchSize * Uint32Array.BYTES_PER_ELEMENT);
@@ -475,12 +555,56 @@ export class WebGpuEd25519Scanner {
     return copy;
   }
 
+  async autotuneWorkgroupSize(batchSize = 131072, trials = 2) {
+    if (this.supportedWorkgroupSizes.length <= 1) {
+      return this.workgroupSize;
+    }
+
+    const scalarWords = new Uint32Array(batchSize * 8);
+    const prefixBytes = [0xa0];
+    let bestSize = this.workgroupSize;
+    let bestElapsedMs = Number.POSITIVE_INFINITY;
+
+    for (const size of this.supportedWorkgroupSizes) {
+      this.setWorkgroupSize(size);
+      this.ensureCapacity(batchSize);
+
+      await this.scanBatchWithCurrentPipeline(scalarWords, prefixBytes, 1);
+
+      let elapsedMs = 0;
+      for (let trial = 0; trial < trials; trial += 1) {
+        const start = performance.now();
+        await this.scanBatchWithCurrentPipeline(scalarWords, prefixBytes, 1);
+        elapsedMs += performance.now() - start;
+      }
+
+      const averageElapsedMs = elapsedMs / trials;
+      if (averageElapsedMs < bestElapsedMs) {
+        bestElapsedMs = averageElapsedMs;
+        bestSize = size;
+      }
+    }
+
+    this.setWorkgroupSize(bestSize);
+    this.ensureCapacity(batchSize);
+    return bestSize;
+  }
+
+  async scanBatch(scalarWords, prefixBytes, prefixNibbleLength) {
+    await this.initialize();
+    if (!this.initialized) {
+      throw new Error('WebGPU is not available');
+    }
+
+    return this.scanBatchWithCurrentPipeline(scalarWords, prefixBytes, prefixNibbleLength);
+  }
+
   async warmup() {
     if (!this.initialized) {
       return false;
     }
-    const dummyScalars = new Uint32Array(WORKGROUP_SIZE * 8);
-    await this.scanBatch(dummyScalars, [0xa0], 1);
+    const dummyScalars = new Uint32Array(this.workgroupSize * 8);
+    await this.scanBatchWithCurrentPipeline(dummyScalars, [0xa0], 1);
     return true;
   }
 }

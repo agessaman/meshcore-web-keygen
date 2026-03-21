@@ -86,6 +86,7 @@ class MeshCoreKeyGenerator {
 
     const gpuReady = await this.webgpuScanner.initialize();
     if (gpuReady) {
+      await this.webgpuScanner.autotuneWorkgroupSize(this.batchSize);
       await this.webgpuScanner.warmup();
       this.backendLabel = `webgpu + ${this.activeHashWorkers} hash workers`;
     } else {
@@ -246,7 +247,7 @@ class MeshCoreKeyGenerator {
 
   updateBackendLabel() {
     const base = this.webgpuScanner.initialized
-      ? `webgpu + ${this.activeHashWorkers} hash workers`
+      ? `webgpu + ${this.activeHashWorkers} hash workers | wg ${this.webgpuScanner.workgroupSize}`
       : `${this.activeHashWorkers} cpu workers`;
     const batchText = `batch ${this.batchSize.toLocaleString()}`;
     const suffix = this.runtimeTuning.stopped && this.runtimeTuning.stopReason
