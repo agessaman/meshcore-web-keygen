@@ -44,6 +44,7 @@ pids
 
 # Coverage directory used by tools like istanbul
 coverage/
+test-results/
 
 # Temporary folders
 tmp/

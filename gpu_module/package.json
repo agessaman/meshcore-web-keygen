@@ -1,0 +1,13 @@
+{
+  "name": "meshcore-web-keygen-gpu-module",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:table": "node scripts/build-ed25519-table.mjs",
+    "build:module": "node scripts/build-gpu-module.mjs",
+    "build": "npm run build:table && npm run build:module"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^3.0.0"
+  }
+}

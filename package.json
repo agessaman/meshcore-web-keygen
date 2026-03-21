@@ -1,0 +1,19 @@
+{
+  "name": "meshcore-web-keygen",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:deps": "node scripts/build-browser-deps.mjs",
+    "build:gpu": "npm --prefix gpu_module run build",
+    "build": "npm run build:deps && npm run build:gpu",
+    "serve": "http-server -p 4173 -c-1 .",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^3.0.0",
+    "http-server": "^14.1.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2"
+  }
+}
