@@ -1,0 +1,17 @@
+{
+  "name": "meshcore-web-keygen",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:table": "node scripts/build-ed25519-table.mjs",
+    "serve": "http-server -p 4173 -c-1 .",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^3.0.0",
+    "http-server": "^14.1.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2"
+  }
+}
