@@ -13,37 +13,33 @@ self.onmessage = async (event) => {
     return;
   }
 
-  const scalars = new Uint8Array(batchSize * 32);
   const scalarWords = new Uint32Array(batchSize * 8);
   const suffixes = new Uint8Array(batchSize * 32);
-
   for (let index = 0; index < batchSize; index += 1) {
     const seed = crypto.getRandomValues(new Uint8Array(32));
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-512', seed));
-    const scalarOffset = index * 32;
     const suffixOffset = index * 32;
-
-    const clamped = digest.slice(0, 32);
-    clamped[0] &= 248;
-    clamped[31] &= 63;
-    clamped[31] |= 64;
-
-    scalars.set(clamped, scalarOffset);
+    const clamped0 = digest[0] & 248;
+    const clamped31 = (digest[31] & 63) | 64;
     const wordOffset = index * 8;
-    for (let word = 0; word < 8; word += 1) {
-      const byteOffset = scalarOffset + word * 4;
-      scalarWords[wordOffset + word] =
-        clamped[byteOffset - scalarOffset]
-        | (clamped[byteOffset - scalarOffset + 1] << 8)
-        | (clamped[byteOffset - scalarOffset + 2] << 16)
-        | (clamped[byteOffset - scalarOffset + 3] << 24);
+
+    scalarWords[wordOffset] = clamped0 | (digest[1] << 8) | (digest[2] << 16) | (digest[3] << 24);
+    scalarWords[wordOffset + 1] = digest[4] | (digest[5] << 8) | (digest[6] << 16) | (digest[7] << 24);
+    scalarWords[wordOffset + 2] = digest[8] | (digest[9] << 8) | (digest[10] << 16) | (digest[11] << 24);
+    scalarWords[wordOffset + 3] = digest[12] | (digest[13] << 8) | (digest[14] << 16) | (digest[15] << 24);
+    scalarWords[wordOffset + 4] = digest[16] | (digest[17] << 8) | (digest[18] << 16) | (digest[19] << 24);
+    scalarWords[wordOffset + 5] = digest[20] | (digest[21] << 8) | (digest[22] << 16) | (digest[23] << 24);
+    scalarWords[wordOffset + 6] = digest[24] | (digest[25] << 8) | (digest[26] << 16) | (digest[27] << 24);
+    scalarWords[wordOffset + 7] = digest[28] | (digest[29] << 8) | (digest[30] << 16) | (clamped31 << 24);
+
+    for (let byte = 0; byte < 32; byte += 1) {
+      suffixes[suffixOffset + byte] = digest[32 + byte];
     }
-    suffixes.set(digest.slice(32, 64), suffixOffset);
   }
 
   self.postMessage(
-    { type: 'results', scalars: scalars.buffer, scalarWords: scalarWords.buffer, suffixes: suffixes.buffer },
-    [scalars.buffer, scalarWords.buffer, suffixes.buffer]
+    { type: 'results', scalarWords: scalarWords.buffer, suffixes: suffixes.buffer },
+    [scalarWords.buffer, suffixes.buffer]
   );
 };
 `;
@@ -56,13 +52,15 @@ class MeshCoreKeyGenerator {
     this.updateInterval = null;
     this.difficultyUpdateInterval = null;
     this.hashWorkers = [];
-    this.numWorkers = Math.max(1, navigator.hardwareConcurrency || 4);
-    this.batchSize = Math.max(8192, this.numWorkers * 1024);
+    this.maxHashWorkers = Math.max(1, navigator.hardwareConcurrency || 4);
+    this.activeHashWorkers = Math.min(8, this.maxHashWorkers);
+    this.batchSize = 131072;
     this.initialized = false;
     this.webgpuScanner = new WebGpuEd25519Scanner();
     this.backendLabel = 'cpu';
     this.autotuned = false;
-    this.batchCandidates = [16384, 32768, 65536, 131072, 262144];
+    this.batchCandidates = [131072, 262144];
+    this.workerCandidates = [8, 10];
     this.runtimeTuning = {
       active: false,
       stopped: false,
@@ -71,6 +69,7 @@ class MeshCoreKeyGenerator {
       bestRate: 0,
       maxIndex: 0,
       batchesAtCurrent: 0,
+      minElapsedBeforeExploreMs: 60000,
       warmupBatches: 4,
       softBatchCeilingMs: 900,
       exploreEveryBatches: 6,
@@ -88,14 +87,16 @@ class MeshCoreKeyGenerator {
     const gpuReady = await this.webgpuScanner.initialize();
     if (gpuReady) {
       await this.webgpuScanner.warmup();
-      this.backendLabel = `webgpu + ${this.numWorkers} hash workers`;
+      this.backendLabel = `webgpu + ${this.activeHashWorkers} hash workers`;
     } else {
-      this.backendLabel = `${this.numWorkers} cpu workers`;
+      this.backendLabel = `${this.activeHashWorkers} cpu workers`;
     }
 
     await this.initializeHashWorkers();
     if (this.webgpuScanner.initialized) {
-      await this.autotuneBatchSize();
+      this.autotuned = true;
+      this.initializeRuntimeTuning(this.batchSize);
+      this.updateBackendLabel();
     }
     this.initialized = true;
   }
@@ -107,7 +108,7 @@ class MeshCoreKeyGenerator {
 
     const blob = new Blob([HASH_WORKER_SCRIPT], { type: 'application/javascript' });
     const workerUrl = URL.createObjectURL(blob);
-    for (let i = 0; i < this.numWorkers; i += 1) {
+    for (let i = 0; i < this.maxHashWorkers; i += 1) {
       this.hashWorkers.push(new Worker(workerUrl));
     }
   }
@@ -140,6 +141,20 @@ class MeshCoreKeyGenerator {
     return value;
   }
 
+  unpackScalarBytes(scalarWords, index) {
+    const bytes = new Uint8Array(32);
+    const wordOffset = index * 8;
+    for (let word = 0; word < 8; word += 1) {
+      const value = scalarWords[wordOffset + word];
+      const byteOffset = word * 4;
+      bytes[byteOffset] = value & 255;
+      bytes[byteOffset + 1] = (value >>> 8) & 255;
+      bytes[byteOffset + 2] = (value >>> 16) & 255;
+      bytes[byteOffset + 3] = (value >>> 24) & 255;
+    }
+    return bytes;
+  }
+
   derivePublicKeyBytes(clampedScalar) {
     const scalar = this.scalarBytesToBigInt(clampedScalar) % ED25519_ORDER;
     if (scalar === 0n) {
@@ -148,8 +163,44 @@ class MeshCoreKeyGenerator {
     return nobleEd25519.Point.BASE.multiply(scalar).toBytes();
   }
 
+  selectWorkerCandidates() {
+    return this.workerCandidates.filter((count) => count <= this.hashWorkers.length);
+  }
+
   selectBatchCandidates() {
-    return this.batchCandidates.filter((size) => size >= this.numWorkers * 256);
+    return this.batchCandidates.filter((size) => size >= this.activeHashWorkers * 2048);
+  }
+
+  async benchmarkCurrentConfig(trials = 2) {
+    let totalElapsed = 0;
+    for (let trial = 0; trial < trials; trial += 1) {
+      const start = performance.now();
+      const batch = await this.generateCandidateBatch();
+      await this.webgpuScanner.scanBatch(batch.scalarWords, [0xa0], 1);
+      totalElapsed += performance.now() - start;
+    }
+    return this.batchSize / ((totalElapsed / trials) / 1000);
+  }
+
+  async autotuneHashWorkers() {
+    const candidates = this.selectWorkerCandidates();
+    let bestCount = this.activeHashWorkers;
+    let bestRate = 0;
+    const previousBatchSize = this.batchSize;
+    this.batchSize = 131072;
+
+    for (const count of candidates) {
+      this.activeHashWorkers = count;
+      const rate = await this.benchmarkCurrentConfig();
+      if (rate > bestRate || (rate >= bestRate * 0.99 && count < bestCount)) {
+        bestRate = rate;
+        bestCount = count;
+      }
+    }
+
+    this.activeHashWorkers = bestCount;
+    this.batchSize = previousBatchSize;
+    this.updateBackendLabel();
   }
 
   async autotuneBatchSize() {
@@ -164,12 +215,8 @@ class MeshCoreKeyGenerator {
     for (const size of candidates) {
       const previous = this.batchSize;
       this.batchSize = size;
-      const start = performance.now();
-      const batch = await this.generateCandidateBatch();
-      await this.webgpuScanner.scanBatch(batch.scalarWords, [0xa0], 1);
-      const elapsed = performance.now() - start;
-      const rate = size / (elapsed / 1000);
-      if (rate > bestRate) {
+      const rate = await this.benchmarkCurrentConfig();
+      if (rate > bestRate || (rate >= bestRate * 0.97 && size > bestSize)) {
         bestRate = rate;
         bestSize = size;
       }
@@ -199,8 +246,8 @@ class MeshCoreKeyGenerator {
 
   updateBackendLabel() {
     const base = this.webgpuScanner.initialized
-      ? `webgpu + ${this.numWorkers} hash workers`
-      : `${this.numWorkers} cpu workers`;
+      ? `webgpu + ${this.activeHashWorkers} hash workers`
+      : `${this.activeHashWorkers} cpu workers`;
     const batchText = `batch ${this.batchSize.toLocaleString()}`;
     const suffix = this.runtimeTuning.stopped && this.runtimeTuning.stopReason
       ? ` | ${this.runtimeTuning.stopReason}`
@@ -228,7 +275,7 @@ class MeshCoreKeyGenerator {
     this.stopRuntimeTuning('dynamic tune capped');
   }
 
-  maybeTuneDuringRun(batchElapsedMs, rate) {
+  maybeTuneDuringRun(batchElapsedMs, rate, elapsedRunMs) {
     if (!this.runtimeTuning.active || this.runtimeTuning.stopped || !this.webgpuScanner.initialized) {
       return;
     }
@@ -244,6 +291,10 @@ class MeshCoreKeyGenerator {
     if (batchElapsedMs >= state.softBatchCeilingMs) {
       state.maxIndex = Math.max(0, state.currentIndex - 1);
       this.stopRuntimeTuning('dynamic tune capped');
+      return;
+    }
+
+    if (elapsedRunMs < state.minElapsedBeforeExploreMs) {
       return;
     }
 
@@ -314,9 +365,10 @@ class MeshCoreKeyGenerator {
       return this.generateCandidateBatchSingle();
     }
 
-    const perWorker = Math.ceil(this.batchSize / this.hashWorkers.length);
+    const activeWorkers = this.hashWorkers.slice(0, this.activeHashWorkers);
+    const perWorker = Math.ceil(this.batchSize / activeWorkers.length);
     const batches = await Promise.all(
-      this.hashWorkers.map((worker) => new Promise((resolve, reject) => {
+      activeWorkers.map((worker) => new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           worker.removeEventListener('message', onMessage);
           worker.removeEventListener('error', onError);
@@ -331,7 +383,6 @@ class MeshCoreKeyGenerator {
           worker.removeEventListener('message', onMessage);
           worker.removeEventListener('error', onError);
           resolve({
-            scalars: new Uint8Array(event.data.scalars),
             scalarWords: new Uint32Array(event.data.scalarWords),
             suffixes: new Uint8Array(event.data.suffixes)
           });
@@ -350,27 +401,22 @@ class MeshCoreKeyGenerator {
       }))
     );
 
-    const scalars = new Uint8Array(batches.reduce((sum, batch) => sum + batch.scalars.length, 0));
     const scalarWords = new Uint32Array(batches.reduce((sum, batch) => sum + batch.scalarWords.length, 0));
     const suffixes = new Uint8Array(batches.reduce((sum, batch) => sum + batch.suffixes.length, 0));
 
-    let scalarOffset = 0;
     let scalarWordOffset = 0;
     let suffixOffset = 0;
     for (const batch of batches) {
-      scalars.set(batch.scalars, scalarOffset);
       scalarWords.set(batch.scalarWords, scalarWordOffset);
       suffixes.set(batch.suffixes, suffixOffset);
-      scalarOffset += batch.scalars.length;
       scalarWordOffset += batch.scalarWords.length;
       suffixOffset += batch.suffixes.length;
     }
 
-    return { scalars, scalarWords, suffixes };
+    return { scalarWords, suffixes };
   }
 
   async generateCandidateBatchSingle() {
-    const scalars = new Uint8Array(this.batchSize * 32);
     const scalarWords = new Uint32Array(this.batchSize * 8);
     const suffixes = new Uint8Array(this.batchSize * 32);
     for (let index = 0; index < this.batchSize; index += 1) {
@@ -382,7 +428,6 @@ class MeshCoreKeyGenerator {
       clamped[0] &= 248;
       clamped[31] &= 63;
       clamped[31] |= 64;
-      scalars.set(clamped, scalarOffset);
       const wordOffset = index * 8;
       scalarWords[wordOffset] = clamped[0] | (clamped[1] << 8) | (clamped[2] << 16) | (clamped[3] << 24);
       scalarWords[wordOffset + 1] = clamped[4] | (clamped[5] << 8) | (clamped[6] << 16) | (clamped[7] << 24);
@@ -394,11 +439,11 @@ class MeshCoreKeyGenerator {
       scalarWords[wordOffset + 7] = clamped[28] | (clamped[29] << 8) | (clamped[30] << 16) | (clamped[31] << 24);
       suffixes.set(digest.slice(32, 64), suffixOffset);
     }
-    return { scalars, scalarWords, suffixes };
+    return { scalarWords, suffixes };
   }
 
   async getMatchedIndexes(candidateBatch, prefixBytes, prefixLength) {
-    const candidateCount = candidateBatch.scalars.length / 32;
+    const candidateCount = candidateBatch.scalarWords.length / 8;
     const matchedIndexes = [];
     const targetPrefix = this.currentTargetPrefix;
 
@@ -413,7 +458,7 @@ class MeshCoreKeyGenerator {
     }
 
     for (let index = 0; index < candidateCount; index += 1) {
-      const scalar = candidateBatch.scalars.slice(index * 32, (index + 1) * 32);
+      const scalar = this.unpackScalarBytes(candidateBatch.scalarWords, index);
       const publicKeyHex = this.toHex(this.derivePublicKeyBytes(scalar));
       if (publicKeyHex.startsWith(targetPrefix) && !publicKeyHex.startsWith('00') && !publicKeyHex.startsWith('FF')) {
         matchedIndexes.push(index);
@@ -479,15 +524,14 @@ class MeshCoreKeyGenerator {
         const { matchedIndexes, candidateCount } = await this.getMatchedIndexes(candidateBatch, prefixBytes, prefixLength);
         const batchElapsedMs = performance.now() - batchStart;
         const batchRate = candidateCount / (batchElapsedMs / 1000);
-        this.maybeTuneDuringRun(batchElapsedMs, batchRate);
+        this.maybeTuneDuringRun(batchElapsedMs, batchRate, Date.now() - this.startTime);
 
         this.attempts += candidateCount;
 
         for (const index of matchedIndexes) {
           const privateKeyBytes = new Uint8Array(64);
-          const scalarOffset = index * 32;
           const suffixOffset = index * 32;
-          privateKeyBytes.set(candidateBatch.scalars.slice(scalarOffset, scalarOffset + 32), 0);
+          privateKeyBytes.set(this.unpackScalarBytes(candidateBatch.scalarWords, index), 0);
           privateKeyBytes.set(candidateBatch.suffixes.slice(suffixOffset, suffixOffset + 32), 32);
 
           const publicKeyBytes = this.derivePublicKeyBytes(privateKeyBytes.slice(0, 32));

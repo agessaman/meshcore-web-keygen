@@ -13,22 +13,14 @@ test('WebGPU flags agree with CPU derivation on a sampled batch', async ({ page 
     const prefix = 'A1';
     const prefixBytes = keyGenerator.prefixToBytes(prefix);
     const batch = await keyGenerator.generateCandidateBatch();
-    const words = new Uint32Array(batch.scalars.length / 4);
-    for (let i = 0; i < words.length; i += 1) {
-      const offset = i * 4;
-      words[i] = batch.scalars[offset]
-        | (batch.scalars[offset + 1] << 8)
-        | (batch.scalars[offset + 2] << 16)
-        | (batch.scalars[offset + 3] << 24);
-    }
     const flags = await keyGenerator.webgpuScanner.scanBatch(
-      words,
+      batch.scalarWords,
       prefixBytes,
       prefix.length
     );
     const mismatches = [];
     for (let index = 0; index < 32; index += 1) {
-      const scalar = batch.scalars.slice(index * 32, (index + 1) * 32);
+      const scalar = keyGenerator.unpackScalarBytes(batch.scalarWords, index);
       const publicKeyHex = keyGenerator.toHex(keyGenerator.derivePublicKeyBytes(scalar));
       const cpuMatch = publicKeyHex.startsWith(prefix) && !publicKeyHex.startsWith('00') && !publicKeyHex.startsWith('FF');
       const gpuMatch = flags[index] === 1;
@@ -36,11 +28,11 @@ test('WebGPU flags agree with CPU derivation on a sampled batch', async ({ page 
         mismatches.push({ index, publicKeyHex, cpuMatch, gpuMatch });
       }
     }
-    return { skipped: false, flagsLength: flags.length, mismatches };
+    return { skipped: false, flagsLength: flags.length, expectedFlagsLength: batch.scalarWords.length / 8, mismatches };
   });
 
   expect(result.skipped).toBeFalsy();
-  expect(result.flagsLength).toBe(32);
+  expect(result.flagsLength).toBe(result.expectedFlagsLength);
   expect(result.mismatches).toEqual([]);
 });
 
