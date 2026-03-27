@@ -641,6 +641,9 @@
                 this.progressIntervalMs = 150;
                 this.currentJobId = 0;
                 this.activeSearch = null;
+                this.generationMode = 'wasm';
+                this.jsFallbackModule = null;
+                this.jsFallbackReason = null;
                 this.perfDebug = new URLSearchParams(window.location.search).get('perfDebug') === '1';
                 this.perfStats = this.createEmptyPerfStats();
             }
@@ -744,7 +747,15 @@
                     this.libraryUrl = libraryUrl;
 
                     // Initialize Web Workers with WASM acceleration
-                    await this.initializeWorkers();
+                    if (typeof WebAssembly === 'undefined') {
+                        await this.loadJsFallback('WebAssembly is not available in this browser.');
+                    } else {
+                        try {
+                            await this.initializeWorkers();
+                        } catch (workerInitError) {
+                            await this.loadJsFallback(`WASM worker init failed: ${workerInitError.message}`);
+                        }
+                    }
                     this.initialized = true;
                 }
             }
@@ -752,19 +763,34 @@
             async initializeWorkers() {
                 if (this.workers.length > 0) return; // Already initialized
 
-                for (let i = 0; i < this.numWorkers; i++) {
-                    const worker = new Worker('./wasm/worker.js', { type: 'module' });
-                    const workerInfo = {
-                        id: i,
-                        worker,
-                        attemptedTotal: 0
-                    };
-                    worker.addEventListener('message', (e) => this.handleWorkerMessage(workerInfo, e.data));
-                    worker.addEventListener('error', (error) => this.handleWorkerError(workerInfo, error));
-                    this.workers.push(workerInfo);
+                try {
+                    for (let i = 0; i < this.numWorkers; i++) {
+                        const worker = new Worker('./wasm/worker.js', { type: 'module' });
+                        const workerInfo = {
+                            id: i,
+                            worker,
+                            attemptedTotal: 0
+                        };
+                        worker.addEventListener('message', (e) => this.handleWorkerMessage(workerInfo, e.data));
+                        worker.addEventListener('error', (error) => this.handleWorkerError(workerInfo, error));
+                        this.workers.push(workerInfo);
+                    }
+                } catch (error) {
+                    await this.cleanupWorkers();
+                    throw error;
                 }
                 this.useFastWorkers = true;
+                this.generationMode = 'wasm';
                 console.log(`✓ Initialized ${this.numWorkers} WASM-accelerated Web Workers`);
+            }
+
+            async loadJsFallback(reason) {
+                if (!this.jsFallbackModule) {
+                    this.jsFallbackModule = await import('./js/fallback-keygen.js');
+                }
+                this.generationMode = 'js-fallback';
+                this.jsFallbackReason = reason || 'WASM unavailable';
+                console.warn(`Using JS fallback key generation: ${this.jsFallbackReason}`);
             }
 
             async cleanupWorkers() {
@@ -887,6 +913,20 @@
                             maxBatchSize: this.maxBatchSize,
                             progressIntervalMs: this.progressIntervalMs
                         });
+                    }
+                });
+            }
+
+            async startJsFallbackSearch(targetPrefix) {
+                await this.loadJsFallback(this.jsFallbackReason || 'WASM path unavailable');
+                const fallbackBatchSize = Math.max(64, Math.floor(this.batchSize / 2));
+                return this.jsFallbackModule.searchVanityKey({
+                    targetPrefix,
+                    batchSize: fallbackBatchSize,
+                    getNobleEd25519: () => nobleEd25519,
+                    shouldStop: () => this.stopRequested || !this.isRunning,
+                    onAttempted: (count) => {
+                        this.attempts += count;
                     }
                 });
             }
@@ -1026,7 +1066,9 @@
 
                     // Update progress text
                     const progressText = document.getElementById('progressText');
-                    const method = this.workers.length > 0 ? `${this.workers.length} WASM workers` : 'single-threaded';
+                    const method = this.generationMode === 'js-fallback'
+                        ? 'JS fallback'
+                        : `${this.workers.length} WASM workers`;
                     let progressLine = `${this.attempts.toLocaleString()} attempts | ${Math.round(rate).toLocaleString()} keys/sec | ${elapsed.toFixed(1)}s elapsed [${method}]`;
 
                     if (this.perfDebug) {
@@ -1072,7 +1114,17 @@
                 }, 10000); // Check every 10 seconds
 
                 try {
-                    const matched = await this.startWorkerSearch(targetPrefix);
+                    let matched = null;
+                    if (this.generationMode === 'js-fallback') {
+                        matched = await this.startJsFallbackSearch(targetPrefix);
+                    } else {
+                        try {
+                            matched = await this.startWorkerSearch(targetPrefix);
+                        } catch (workerError) {
+                            await this.loadJsFallback(`WASM search failed: ${workerError.message}`);
+                            matched = await this.startJsFallbackSearch(targetPrefix);
+                        }
+                    }
                     if (!matched) {
                         return null;
                     }
@@ -1112,7 +1164,9 @@
             stop() {
                 this.isRunning = false;
                 this.stopRequested = true;
-                this.stopWorkers();
+                if (this.generationMode === 'wasm') {
+                    this.stopWorkers();
+                }
                 if (this.updateInterval) {
                     clearInterval(this.updateInterval);
                 }
@@ -1383,7 +1437,9 @@
                 await keyGenerator.initialize();
                 
                 // Update progress text with parallelization method
-                if (keyGenerator.workers.length > 0) {
+                if (keyGenerator.generationMode === 'js-fallback') {
+                    document.getElementById('progressText').textContent = 'Using pure JavaScript fallback mode...';
+                } else if (keyGenerator.workers.length > 0) {
                     document.getElementById('progressText').textContent = `Initialized ${keyGenerator.workers.length} WASM workers for parallel generation...`;
                 }
                 
