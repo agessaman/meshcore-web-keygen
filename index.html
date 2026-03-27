@@ -745,33 +745,62 @@
 
                     // Step 1: Dispatch with empty prefix (nibbles=0 → matches ALL keys)
                     // This tests if the shader runs at all, regardless of prefix matching
-                    let result = await this.gpuKeygen.dispatchBatch('');
+                    let result = await this.gpuKeygen.dispatchBatch('', { allowWorkgroupReduce: false });
                     console.log(`GPU diagnostic: empty-prefix dispatch returned ${result.matches.length} matches from ${result.attempted} threads`);
 
                     if (result.matches.length === 0) {
-                        // Shader produces no matches even when matching everything
-                        // This means the crypto pipeline is completely broken or shader is timing out
-                        console.error('GPU validation FAILED: zero matches with empty prefix (should match ALL keys)');
-                        console.error('Possible causes: shader timeout, broken crypto pipeline, or all keys hit reserved check');
-                        // Try a smaller dispatch to check if it's a timeout issue
-                        const origWorkgroups = this.gpuKeygen.numWorkgroups;
+                        // Likely shader timeout on large dispatch; retry with smaller batch
+                        console.warn('WebGPU: initial batch returned no matches (possible timeout); retrying with smaller batch.');
                         this.gpuKeygen.numWorkgroups = 4; // Only 256 threads
                         this.gpuKeygen.threadsPerDispatch = 64 * 4;
-                        const smallResult = await this.gpuKeygen.dispatchBatch('');
+                        const smallResult = await this.gpuKeygen.dispatchBatch('', { allowWorkgroupReduce: false });
                         console.log(`GPU diagnostic: small dispatch (${this.gpuKeygen.threadsPerDispatch} threads) returned ${smallResult.matches.length} matches`);
-                        this.gpuKeygen.numWorkgroups = origWorkgroups;
-                        this.gpuKeygen.threadsPerDispatch = 64 * origWorkgroups;
 
                         if (smallResult.matches.length === 0) {
                             console.error('GPU validation FAILED: even small dispatch produced zero matches');
                             return false;
                         }
-                        result = smallResult;
+                        // Probe for largest batch size that doesn't timeout (maximize throughput)
+                        let low = 4, high = 1024;
+                        while (high - low > 1) {
+                            const mid = Math.floor((low + high) / 2);
+                            this.gpuKeygen.numWorkgroups = mid;
+                            this.gpuKeygen.threadsPerDispatch = 64 * mid;
+                            const probeResult = await this.gpuKeygen.dispatchBatch('', { allowWorkgroupReduce: false });
+                            const runsAtMid = mid <= 128 ? 4 : (mid <= 256 ? 2 : 1);
+                            const expectedCompleted = runsAtMid * 64 * mid;
+                            const completedEnough = probeResult.attempted >= Math.floor(0.95 * expectedCompleted);
+                            if (probeResult.matches.length > 0 && completedEnough) {
+                                low = mid;
+                                result = probeResult;
+                            } else {
+                                high = mid;
+                            }
+                        }
+                        this.gpuKeygen.numWorkgroups = low;
+                        this.gpuKeygen.threadsPerDispatch = 64 * low;
+                        // Retry full batch once in case the initial timeout was cold-start only
+                        this.gpuKeygen.numWorkgroups = 1024;
+                        this.gpuKeygen.threadsPerDispatch = 64 * 1024;
+                        const fullRetry = await this.gpuKeygen.dispatchBatch('', { allowWorkgroupReduce: false });
+                        if (fullRetry.matches.length > 0) {
+                            this.gpuKeygen.numWorkgroups = 1024;
+                            this.gpuKeygen.threadsPerDispatch = 64 * 1024;
+                            result = fullRetry;
+                            console.log('WebGPU: full batch (65536 threads) works after warmup; using for this session.');
+                        } else {
+                            this.gpuKeygen.numWorkgroups = low;
+                            this.gpuKeygen.threadsPerDispatch = 64 * low;
+                            console.log(`WebGPU: large batch timed out; using ${this.gpuKeygen.threadsPerDispatch} threads (${low} workgroups) for this session.`);
+                            if (result.matches.length === 0) result = await this.gpuKeygen.dispatchBatch('', { allowWorkgroupReduce: false });
+                        }
+                        this.gpuKeygen.consecutiveZeroCompletions = 0;
+                        this.gpuKeygen.consecutiveFullCompletions = 0;
                     }
 
                     // Step 2: If we got matches with empty prefix, try with a 1-nibble prefix
                     if (result.matches.length > 0) {
-                        const prefixResult = await this.gpuKeygen.dispatchBatch('A');
+                        const prefixResult = await this.gpuKeygen.dispatchBatch('A', { allowWorkgroupReduce: false });
                         console.log(`GPU diagnostic: prefix 'A' dispatch returned ${prefixResult.matches.length} matches`);
                         if (prefixResult.matches.length > 0) {
                             result = prefixResult; // Use prefix matches for validation
@@ -1076,6 +1105,98 @@
                 return publicKeyHex.startsWith(targetPrefix.toUpperCase());
             }
 
+            // --- Prefix matching verification (plan: verify prefix matching logic) ---
+            // Byte-level comparison used by CPU workers (same logic as worker)
+            _prefixToTargetBytes(prefix) {
+                const p = prefix.toUpperCase();
+                const targetNibbles = p.length;
+                const targetByteLen = (targetNibbles + 1) >>> 1;
+                const targetBytes = new Uint8Array(targetByteLen);
+                for (let i = 0; i < targetNibbles; i++) {
+                    const nibble = parseInt(p[i], 16);
+                    if (i & 1) targetBytes[i >>> 1] |= nibble;
+                    else targetBytes[i >>> 1] = nibble << 4;
+                }
+                return { targetBytes, targetNibbles };
+            }
+
+            _byteLevelPrefixMatch(pubkeyBytes, prefix) {
+                const { targetBytes, targetNibbles } = this._prefixToTargetBytes(prefix);
+                const fullBytes = targetNibbles >>> 1;
+                for (let i = 0; i < fullBytes; i++) {
+                    if (pubkeyBytes[i] !== targetBytes[i]) return false;
+                }
+                if (targetNibbles & 1) {
+                    if ((pubkeyBytes[fullBytes] & 0xF0) !== (targetBytes[fullBytes] & 0xF0)) return false;
+                }
+                return true;
+            }
+
+            // JS mirror of GPU shader check_prefix (same encoding as gpu-keygen _encodePrefix)
+            _gpuStylePrefixMatch(pubkeyBytes, prefixHex) {
+                const prefix = prefixHex.toUpperCase();
+                const nibbles = prefix.length;
+                if (nibbles === 0) return true;
+                const bytes = new Uint8Array(8);
+                for (let i = 0; i < nibbles; i++) {
+                    const nibble = parseInt(prefix[i], 16);
+                    if (i & 1) bytes[i >>> 1] |= nibble;
+                    else bytes[i >>> 1] = nibble << 4;
+                }
+                const view = new DataView(bytes.buffer);
+                const prefix0 = view.getUint32(0, true);
+                const prefix1 = view.getUint32(4, true);
+                const fullBytes = nibbles >>> 1;
+                for (let i = 0; i < fullBytes; i++) {
+                    const pubByte = pubkeyBytes[i];
+                    const pfxByte = i < 4 ? (prefix0 >> (i * 8)) & 0xFF : (prefix1 >> ((i - 4) * 8)) & 0xFF;
+                    if (pubByte !== pfxByte) return false;
+                }
+                if (nibbles & 1) {
+                    const i = fullBytes;
+                    const pubByte = pubkeyBytes[i] & 0xF0;
+                    const pfxByte = i < 4 ? (prefix0 >> (i * 8)) & 0xF0 : (prefix1 >> ((i - 4) * 8)) & 0xF0;
+                    if (pubByte !== pfxByte) return false;
+                }
+                return true;
+            }
+
+            verifyPrefixMatchingLogic() {
+                const hexToBytes = (hex) => new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+                const pad64 = (hex) => (hex.length >= 64) ? hex.slice(0, 64) : hex + '0'.repeat(64 - hex.length);
+                const vectors = [
+                    { pubkeyHex: pad64('F8A1B2'), prefix: 'F8A1B2', shouldMatch: true },
+                    { pubkeyHex: pad64('F8A1B2'), prefix: 'F8A1B3', shouldMatch: false },
+                    { pubkeyHex: pad64('AB'), prefix: 'AB', shouldMatch: true },
+                    { pubkeyHex: pad64('AB'), prefix: 'AC', shouldMatch: false },
+                    { pubkeyHex: pad64('DEAD'), prefix: 'DEAD', shouldMatch: true },
+                    { pubkeyHex: pad64('DEAD'), prefix: 'DEAC', shouldMatch: false },
+                    { pubkeyHex: pad64('12345678'), prefix: '12345678', shouldMatch: true },
+                    { pubkeyHex: pad64('12345678'), prefix: '12345679', shouldMatch: false },
+                ];
+                let passed = 0;
+                let failed = 0;
+                for (const v of vectors) {
+                    const pubkeyBytes = hexToBytes(v.pubkeyHex);
+                    const checkPrefixResult = this.checkPrefix(v.pubkeyHex, v.prefix);
+                    const byteLevelResult = this._byteLevelPrefixMatch(pubkeyBytes, v.prefix);
+                    const gpuStyleResult = this._gpuStylePrefixMatch(pubkeyBytes, v.prefix);
+                    const ok = checkPrefixResult === v.shouldMatch && byteLevelResult === v.shouldMatch && gpuStyleResult === v.shouldMatch;
+                    if (ok) {
+                        passed++;
+                    } else {
+                        failed++;
+                        console.error('Prefix verification FAILED:', { pubkeyHex: v.pubkeyHex.slice(0, 12) + '...', prefix: v.prefix, shouldMatch: v.shouldMatch, checkPrefix: checkPrefixResult, byteLevel: byteLevelResult, gpuStyle: gpuStyleResult });
+                    }
+                }
+                if (failed === 0) {
+                    console.log(`Prefix matching verification passed: ${passed}/${vectors.length} vectors (checkPrefix, byte-level, GPU-style agree).`);
+                } else {
+                    console.error(`Prefix matching verification failed: ${passed} passed, ${failed} failed.`);
+                }
+                return failed === 0;
+            }
+
             // Validate that a generated keypair is correct (matches Python implementation)
             async validateKeypair(privateKeyHex, publicKeyHex) {
                 try {
@@ -1331,6 +1452,25 @@
                         meshcorePrivateKey.set(clamped, 0);
                         meshcorePrivateKey.set(digestArray.slice(32, 64), 32);
 
+                        // Verify GPU match: CPU-derived key must actually have the target prefix
+                        const publicKeyHex = this.toHex(publicKeyBytes);
+                        const targetUpper = targetPrefix.toUpperCase();
+                        if (!publicKeyHex.startsWith(targetUpper)) {
+                            console.error('GPU prefix mismatch: shader reported match but CPU-derived key does not start with prefix', { publicKeyHex: publicKeyHex.slice(0, 16) + '...', targetPrefix: targetUpper });
+                            continue;
+                        }
+                        // Optionally ensure GPU-returned pubkey bytes match CPU-derived for prefix length
+                        const prefixByteLen = (targetUpper.length + 1) >>> 1;
+                        const gpuPubkey = match.pubkey;
+                        if (gpuPubkey && gpuPubkey.length >= prefixByteLen) {
+                            for (let b = 0; b < prefixByteLen; b++) {
+                                if (gpuPubkey[b] !== publicKeyBytes[b]) {
+                                    console.error('GPU/CPU pubkey byte mismatch at prefix', { byteIndex: b, gpu: gpuPubkey[b], cpu: publicKeyBytes[b] });
+                                    break;
+                                }
+                            }
+                        }
+
                         keypairs.push({
                             publicKey: publicKeyBytes,
                             privateKey: meshcorePrivateKey,
@@ -1480,6 +1620,12 @@
 
         // Global key generator instance
         const keyGenerator = new MeshCoreKeyGenerator();
+
+        // Run prefix matching verification when requested (URL ?verifyPrefix=1 or localStorage verifyPrefix)
+        if (new URLSearchParams(window.location.search).get('verifyPrefix') || localStorage.getItem('verifyPrefix')) {
+            keyGenerator.verifyPrefixMatchingLogic();
+        }
+        window.verifyPrefixMatchingLogic = () => keyGenerator.verifyPrefixMatchingLogic();
 
         // DOM elements
         const form = document.getElementById('keygenForm');

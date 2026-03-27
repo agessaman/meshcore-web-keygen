@@ -18,6 +18,7 @@ struct Config {
     seed_2: u32,
     seed_3: u32,
     dispatch_id: u32,      // Incremented per dispatch for PRNG uniqueness
+    base_thread_id: u32,   // Added to global_invocation_id.x for multi-dispatch per submit
 }
 
 struct Match {
@@ -28,7 +29,11 @@ struct Match {
 @group(0) @binding(0) var<uniform> config: Config;
 @group(0) @binding(1) var<storage, read> base_table: array<u32, 1024>;  // 16 points × 4 coords × 16 limbs × u32
 @group(0) @binding(2) var<storage, read_write> matches: array<Match, 64>;
-@group(0) @binding(3) var<storage, read_write> match_count: atomic<u32>;
+struct Counts {
+    match_count: atomic<u32>,
+    completed_count: atomic<u32>,
+};
+@group(0) @binding(3) var<storage, read_write> counts: Counts;
 
 
 // --- Field Element: 16 × u32 limbs, ~16 bits each ---
@@ -511,11 +516,11 @@ fn sha512_32bytes(msg: array<u32, 8>) -> array<u32, 16> {
 // --- PRNG (xorshift128+) ---
 
 fn prng_seed(global_id: u32) -> array<u32, 4> {
-    // Mix dispatch seed with thread ID for unique per-thread seed
+    // Mix dispatch seed with thread ID for unique per-thread seed (all 128 bits vary with thread)
     var s: array<u32, 4>;
     s[0] = config.seed_0 ^ (global_id * 2654435761u);
     s[1] = config.seed_1 ^ (global_id * 2246822519u);
-    s[2] = config.seed_2 ^ (config.dispatch_id * 3266489917u);
+    s[2] = config.seed_2 ^ (config.dispatch_id * 3266489917u) ^ (global_id * 2013265921u);
     s[3] = config.seed_3 ^ ((global_id + 1u) * 668265263u);
     // Ensure non-zero
     if (s[0] == 0u && s[1] == 0u) { s[0] = global_id + 1u; }
@@ -523,7 +528,7 @@ fn prng_seed(global_id: u32) -> array<u32, 4> {
     return s;
 }
 
-fn xorshift128plus(state: ptr<function, array<u32, 4>>) -> u32 {
+fn xorshift128plus(state: ptr<function, array<u32, 4>>) -> vec2<u32> {
     // xorshift128+ on two 64-bit values stored as (hi,lo) pairs
     var s1h = (*state)[0]; var s1l = (*state)[1];
     let s0h = (*state)[2]; let s0l = (*state)[3];
@@ -549,14 +554,19 @@ fn xorshift128plus(state: ptr<function, array<u32, 4>>) -> u32 {
 
     (*state)[2] = s1h; (*state)[3] = s1l;
 
-    // Return low 32 bits of s0 + s1
-    return s0l + s1l;
+    // Return full 64-bit output (s0 + s1) as (low 32 bits, high 32 bits)
+    let sumLo = s0l + s1l;
+    let carry = select(0u, 1u, sumLo < s0l);
+    let sumHi = s0h + s1h + carry;
+    return vec2<u32>(sumLo, sumHi);
 }
 
 fn generate_seed(state: ptr<function, array<u32, 4>>) -> array<u32, 8> {
     var seed: array<u32, 8>;
-    for (var i = 0u; i < 8u; i++) {
-        seed[i] = xorshift128plus(state);
+    for (var i = 0u; i < 4u; i++) {
+        let out64 = xorshift128plus(state);
+        seed[i * 2u] = out64.x;
+        seed[i * 2u + 1u] = out64.y;
     }
     return seed;
 }
@@ -612,7 +622,7 @@ fn is_reserved(pubkey: array<u32, 8>) -> bool {
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let thread_id = gid.x;
+    let thread_id = config.base_thread_id + gid.x;
 
     // Initialize PRNG with unique per-thread seed
     var rng_state = prng_seed(thread_id);
@@ -679,9 +689,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // Check for reserved prefix (00 or FF)
     if (is_reserved(pubkey)) { return; }
 
+    atomicAdd(&counts.completed_count, 1u);
+
     // Check if public key matches target prefix
     if (check_prefix(pubkey)) {
-        let slot = atomicAdd(&match_count, 1u);
+        let slot = atomicAdd(&counts.match_count, 1u);
         if (slot < 64u) {
             matches[slot].seed = seed;
             matches[slot].pubkey = pubkey;
