@@ -50,6 +50,12 @@ Expected time to find a key at 100k keys/second:
 - 7-character prefix: ~45 minutes
 - 8-character prefix: ~12 hours
 
+### Performance Debugging
+
+- `index.html?perfDebug=1` enables live worker performance counters in the progress line.
+- Browser console helper: `await runPerfSmoke('F8', 10)` runs a fixed-duration smoke test and returns sampled keys/sec plus median throughput.
+- `window.keyGenerator` is exposed for quick manual inspection while tuning worker/batch behavior.
+
 ## Browser Support
 
 Chrome 60+, Firefox 55+, Safari 11+, Edge 79+
