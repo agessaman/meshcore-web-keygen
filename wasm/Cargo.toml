@@ -1,0 +1,20 @@
+[package]
+name = "meshcore-keygen"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc", "precomputed-tables"] }
+sha2 = { version = "0.10", default-features = false }
+getrandom = { version = "0.2", features = ["js"] }
+rand_chacha = { version = "0.3", default-features = false }
+rand_core = { version = "0.6", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
