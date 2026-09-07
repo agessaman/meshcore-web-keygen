@@ -38,13 +38,14 @@ MeshCore derives the public key with `ge_scalarmult_base` on the first 32 bytes,
 
 Search uses all CPU cores via WASM workers. The UI estimates about 1 million keys/sec per core; the live counter is the actual rate on your machine.
 
-Expected time at 8 million keys/sec (8 cores):
-- 1-3 character prefix: instant
-- 4-character prefix: < 0.1 seconds
+Measured: **12.3 million keys/sec** on an M4 Pro.
+
+Expected time at that rate:
+- 1-4 character prefix: instant
 - 5-character prefix: ~0.1 seconds
-- 6-character prefix: ~2 seconds
-- 7-character prefix: ~30 seconds
-- 8-character prefix: ~9 minutes
+- 6-character prefix: ~1 second
+- 7-character prefix: ~22 seconds
+- 8-character prefix: ~6 minutes
 
 If WASM is unavailable, the page falls back to the same walk in JavaScript.
 
