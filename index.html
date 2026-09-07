@@ -533,7 +533,7 @@
                            placeholder="Enter hex prefix (e.g., F8, F8A1, FFF, etc.)" 
                            maxlength="8" pattern="[0-9A-Fa-f]+">
                     <small style="color: #7f8c8d; margin-top: 5px; display: block;">
-                        Enter any hex prefix (1-8 characters). Longer prefixes take longer to find.
+                        Enter any hex prefix (1-8 characters). Uses all CPU cores. Longer prefixes take longer to find.
                     </small>
                     <div id="prefixInfo" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea; display: none;">
                         <div style="font-weight: 600; color: #2c3e50; margin-bottom: 5px;">📊 Difficulty Estimate</div>
@@ -634,10 +634,10 @@
                 this.initialized = false;
                 this.workers = [];
                 this.numWorkers = navigator.hardwareConcurrency || 4;
-                this.batchSize = 4096; // Initial per-worker batch size
+                this.batchSize = 8192;
                 this.targetBatchMs = 20;
                 this.minBatchSize = 512;
-                this.maxBatchSize = 65536;
+                this.maxBatchSize = 262144;
                 this.progressIntervalMs = 150;
                 this.currentJobId = 0;
                 this.activeSearch = null;
@@ -1231,6 +1231,29 @@
         const importModal = document.getElementById('importModal');
         const closeModal = document.getElementById('closeModal');
 
+        const ESTIMATED_KEYS_PER_SEC_PER_CORE = 1000000;
+        const NUM_CORES = navigator.hardwareConcurrency || 4;
+
+        function formatKeysPerSec(rate) {
+            if (rate >= 1e6) {
+                return `${(rate / 1e6).toFixed(1)}M keys/sec`;
+            }
+            if (rate >= 1000) {
+                return `${Math.round(rate / 1000)}k keys/sec`;
+            }
+            return `${Math.round(rate).toLocaleString()} keys/sec`;
+        }
+
+        function formatEstimatedTime(seconds) {
+            if (seconds < 1) return 'less than a second';
+            if (seconds >= 31536000) return `${(seconds / 31536000).toFixed(1)} years`;
+            if (seconds >= 2592000) return `${(seconds / 2592000).toFixed(1)} months`;
+            if (seconds >= 86400) return `${(seconds / 86400).toFixed(1)} days`;
+            if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)} hours`;
+            if (seconds >= 60) return `${(seconds / 60).toFixed(1)} minutes`;
+            return `${Math.round(seconds)} seconds`;
+        }
+
         // Calculate and display difficulty estimate
         function updateDifficultyEstimate(prefix, currentRate = null) {
             const prefixInfo = document.getElementById('prefixInfo');
@@ -1241,11 +1264,9 @@
                 return;
             }
             
-            // Calculate probability and expected attempts
             const probability = 1 / Math.pow(16, prefix.length);
             const expectedAttempts = 1 / probability;
             
-            // Format the expected attempts in a human-readable way
             let attemptsText;
             if (expectedAttempts >= 1e12) {
                 attemptsText = `${(expectedAttempts / 1e12).toFixed(1)} trillion`;
@@ -1258,40 +1279,14 @@
             } else {
                 attemptsText = Math.round(expectedAttempts).toLocaleString();
             }
-            
-            // Calculate estimated time (use current rate if provided, otherwise default to 10k keys/sec)
-            const estimatedKeysPerSecond = currentRate || 10000;
+
+            const estimatedKeysPerSecond = currentRate || (NUM_CORES * ESTIMATED_KEYS_PER_SEC_PER_CORE);
             const estimatedSeconds = expectedAttempts / estimatedKeysPerSecond;
+            const timeText = formatEstimatedTime(estimatedSeconds);
+            const rateText = currentRate
+                ? formatKeysPerSec(currentRate)
+                : `${formatKeysPerSec(estimatedKeysPerSecond)} on ${NUM_CORES} cores`;
             
-            let timeText;
-            if (estimatedSeconds >= 31536000) { // 1 year
-                timeText = `${(estimatedSeconds / 31536000).toFixed(1)} years`;
-            } else if (estimatedSeconds >= 2592000) { // 1 month
-                timeText = `${(estimatedSeconds / 2592000).toFixed(1)} months`;
-            } else if (estimatedSeconds >= 86400) { // 1 day
-                timeText = `${(estimatedSeconds / 86400).toFixed(1)} days`;
-            } else if (estimatedSeconds >= 3600) { // 1 hour
-                timeText = `${(estimatedSeconds / 3600).toFixed(1)} hours`;
-            } else if (estimatedSeconds >= 60) { // 1 minute
-                timeText = `${(estimatedSeconds / 60).toFixed(1)} minutes`;
-            } else {
-                timeText = `${Math.round(estimatedSeconds)} seconds`;
-            }
-            
-            // Format the rate for display
-            let rateText;
-            if (currentRate) {
-                if (currentRate >= 1000) {
-                    rateText = `${(currentRate / 1000).toFixed(0)}k`;
-                } else {
-                    rateText = Math.round(currentRate).toLocaleString();
-                }
-                rateText += ' keys/sec';
-            } else {
-                rateText = '10k keys/sec';
-            }
-            
-            // Determine difficulty level
             let difficultyLevel, difficultyColor;
             if (expectedAttempts <= 1000) {
                 difficultyLevel = "Very Easy";

@@ -46,14 +46,13 @@ function decodeBatchResult(resultBuf) {
         offset += 32;
         const clamped = resultBuf.slice(offset, offset + 32);
         offset += 32;
-        const sha512SecondHalf = resultBuf.slice(offset, offset + 32);
+        const nonce = resultBuf.slice(offset, offset + 32);
         offset += 32;
-        offset += 32; // seed (currently not needed by JS)
+        offset += 32; // unused (kept for 128-byte records)
 
-        // Build 64-byte private key: [clamped_scalar][sha512_second_half]
         const privateKey = new Uint8Array(64);
         privateKey.set(clamped, 0);
-        privateKey.set(sha512SecondHalf, 32);
+        privateKey.set(nonce, 32);
 
         results.push({
             publicKey: toHex(pubkey),
@@ -216,7 +215,7 @@ self.onmessage = async function(e) {
             adaptiveBatching: Boolean(e.data.adaptiveBatching),
             targetBatchMs: e.data.targetBatchMs ?? 16,
             minBatchSize: e.data.minBatchSize ?? 512,
-            maxBatchSize: e.data.maxBatchSize ?? 65536,
+            maxBatchSize: e.data.maxBatchSize ?? 262144,
             progressIntervalMs: e.data.progressIntervalMs ?? 150
         });
     } else if (type === 'stop') {

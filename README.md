@@ -29,26 +29,24 @@ Pre-fill the prefix input:
 
 ## Key Format
 
-- **Private Key**: 64 bytes (128 hex characters)
+- **Private Key**: 64 bytes (128 hex characters): clamped Ed25519 scalar || signing nonce
 - **Public Key**: 32 bytes (64 hex characters)
+
+MeshCore derives the public key with `ge_scalarmult_base` on the first 32 bytes, so the search walks a clamped scalar (`s += 8`, `P += 8G`) instead of SHA-512 expanding a new seed for every candidate. The nonce half is random.
 
 ## Performance
 
-Baseline: ~100,000 keys/second on modern devices. Example measurements:
-- **iPhone 15 Pro**: ~100k keys/sec
-- **M4 Mac Mini**: ~300k keys/sec
-- **Intel i7-9700K**: ~85k keys/sec
-- **AMD Ryzen 9950X**: ~417k keys/sec
+Search uses all CPU cores via WASM workers. The UI estimates about 1 million keys/sec per core; the live counter is the actual rate on your machine.
 
-Expected time to find a key at 100k keys/second:
-- 1-character prefix: < 0.01 seconds
-- 2-character prefix: ~0.003 seconds
-- 3-character prefix: ~0.04 seconds
-- 4-character prefix: ~0.7 seconds
-- 5-character prefix: ~10 seconds
-- 6-character prefix: ~3 minutes
-- 7-character prefix: ~45 minutes
-- 8-character prefix: ~12 hours
+Expected time at 8 million keys/sec (8 cores):
+- 1-3 character prefix: instant
+- 4-character prefix: < 0.1 seconds
+- 5-character prefix: ~0.1 seconds
+- 6-character prefix: ~2 seconds
+- 7-character prefix: ~30 seconds
+- 8-character prefix: ~9 minutes
+
+If WASM is unavailable, the page falls back to the same walk in JavaScript.
 
 ### Performance Debugging
 

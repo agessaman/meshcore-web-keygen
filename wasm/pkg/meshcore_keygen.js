@@ -3,6 +3,12 @@
 /**
  * Generate a batch of Ed25519 vanity keys, returning only those matching the prefix.
  *
+ * Candidates are produced by walking `s += 8`, `P += 8G` from a random clamped
+ * scalar. Affine y is recovered for a whole chunk with one inversion. SHA-512
+ * seed expansion is skipped: MeshCore derives the public key from the stored
+ * 32-byte scalar, and the second half of the 64-byte private key is a random
+ * signing nonce.
+ *
  * # Arguments
  * * `prefix_bytes` - Packed prefix bytes (high-nibble-first, e.g. "F8" → 0xF8)
  * * `prefix_nibbles` - Number of hex nibbles to match (1-8)
@@ -11,7 +17,7 @@
  * # Returns
  * Flat byte buffer:
  *   [match_count: u32 LE][attempted: u32 LE]
- *   Per match (128 bytes): [pubkey: 32][clamped: 32][sha512_second_half: 32][seed: 32]
+ *   Per match (128 bytes): [pubkey: 32][clamped: 32][nonce: 32][unused: 32]
  * @param {Uint8Array} prefix_bytes
  * @param {number} prefix_nibbles
  * @param {number} batch_size
